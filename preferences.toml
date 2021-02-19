@@ -2,11 +2,13 @@
 #namespace is called the "namespace id" on the cloudflare website for Workers KV
 #account is called "account id" on the cloudflare dashboard
 #key is also called the "global api key" on cloudflare at https://dash.cloudflare.com/profile/api-tokens
+#token is used instead of the Key and configuted at https://dash.cloudflare.com/profile/api-tokens
 #email is the email associated with your cloudflare account
 account=""
 namespace=""
 email=""
 key=""
+token=""
 
 #backup directories location:folder,folder,folder
 location="."
