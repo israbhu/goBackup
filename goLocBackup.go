@@ -1,8 +1,10 @@
 package main
 
 import (
+	//flags
+	"flag"
 	"fmt"
-	"strings"
+//	"strings"
 	//hash
 	"crypto/md5"
 	"encoding/hex"
@@ -77,7 +79,7 @@ func verifyKV() bool {
 	req.Header.Set("Content-Type", "application/json")
 
 	//for write/read
-	bearer := "cBqbac8aKYO570JE6CnT5J0uJvGn5kBvTNyCzZVC"
+	bearer := cf.Token
 	req.Header.Set("Authorization", "Bearer "+bearer)
 	req.Header.Set("X-Auth-Email", cf.Email)
 //	req.Header.Set("X-Auth-Key", cf.Key)
@@ -131,10 +133,14 @@ func uploadKV(file, dataKey string) bool {
 	req.Header.Set("Content-Type", "application/json")
 
 	//for write/read
-	bearer := "cBqbac8aKYO570JE6CnT5J0uJvGn5kBvTNyCzZVC"
-	req.Header.Set("Authorization", "Bearer "+bearer)
+
+	if cf.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+cf.Token)
+	} else if cf.Key != "" {
+		req.Header.Set("X-Auth-Key", cf.Key)
+	}
+
 	req.Header.Set("X-Auth-Email", cf.Email)
-//	req.Header.Set("X-Auth-Key", cf.Key)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -173,8 +179,13 @@ func downloadKV(dataKey string) string {
 	req.Header.Set("Content-Type", "application/json")
 
 	//for write/read
-	bearer := "cBqbac8aKYO570JE6CnT5J0uJvGn5kBvTNyCzZVC"
-	req.Header.Set("Authorization", "Bearer "+bearer)
+	if cf.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+cf.Token)
+	} else if cf.Key != "" {
+		req.Header.Set("X-Auth-Key", cf.Key)
+	}
+
+//	req.Header.Set("Authorization", "Bearer "+bearer)
 	req.Header.Set("X-Auth-Email", cf.Email)
 //	req.Header.Set("X-Auth-Key", cf.Key)
 
@@ -273,8 +284,8 @@ fmt.Printf("permissions: %#o\n", fi.Mode().Perm()) // 0400, 0777, etc.
 
 
 //read from a toml file
-func readTOML() {
-	dat, err := ioutil.ReadFile("preferences.toml")
+func readTOML(file string) {
+	dat, err := ioutil.ReadFile(file)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -399,6 +410,65 @@ func getFiles(name string, f []string) []string {
 	return f
 }
 
+//yes, email, Account, Data, Email, Namespace, Key, Token, Location string
+//backup strategy, zip, encrypt, verbose, sync, list data, alt pref, no pref
+func extractCommandLine() {
+	//verbose
+//	var yFlag = flag.Bool("y", false, "Always accept all prompts")
+	var emailFlag = flag.String("email", "", "User email")
+	var accountFlag = flag.String("account", "", "User Account")
+	var nsFlag = flag.String("namespace", "", "User's Namespace")
+	var keyFlag = flag.String("key", "", "Account Global Key")
+	var tokenFlag = flag.String("token", "", "Configured KV Workers key")
+	var addLocationFlag = flag.String("addLocation", "", "Add these locations to backup")
+	var locationFlag = flag.String("location", "", "Use only these locations to backup")
+	var backupFlag = flag.String("backup", "", "Backup strategy")
+	var zipFlag = flag.String("zip", "", "zip")
+/*	var encryptFlag = flag.String("crypt", "", "encrypt")
+	var verboseFlag = flag.Bool("v", false, "More information")
+	var syncFlag = flag.Bool("s", false, "Synchronize local data to the cloud")
+	var listdataFlag = flag.Bool("list", false, "List the data from the local data")
+*/	var altPrefFlag = flag.String("pref", "", "use a alternate preference file")
+
+	flag.Parse()
+
+	if *altPrefFlag != "" {
+		readTOML(*altPrefFlag)
+	}
+
+	//overwrite over any preferences file
+	if(*emailFlag != "") {
+		cf.Email = *emailFlag
+	}
+	if(*accountFlag != "") {
+		cf.Account = *accountFlag
+	}
+	if(*nsFlag != "") {
+		cf.Namespace = *nsFlag
+	}
+	if(*keyFlag != "") {
+		cf.Key = *keyFlag
+	}
+	if(*tokenFlag != "") {
+		cf.Token = *tokenFlag
+	}
+	if(*locationFlag != "") { //replace the locations
+		cf.Location = *locationFlag
+	}
+	if(*addLocationFlag != "") { //add to the locations
+		cf.Location = cf.Location + "," + *addLocationFlag
+	}
+	if(*backupFlag != "") {
+		cf.Backup = *backupFlag
+	}
+	if(*zipFlag != "") {
+		cf.Zip = *zipFlag
+	}
+
+
+
+
+}
 
 //this struct stores the metadata that will be uploaded with each file
 type fileData struct {
@@ -424,30 +494,28 @@ type Account struct {
 // namespace is called the "namespace id" on the cloudflare website for Workers KV
 // account is called "account id" on the cloudflare dashboard
 // key is also called the "global api key" on cloudflare at https://dash.cloudflare.com/profile/api-tokens
+// Token is used instead of the key and created on cloudflare at https://dash.cloudflare.com/profile/api-tokens
 // email is the email associated with your cloudflare account
 
 
-	Account, Data, Email, Namespace, Key, Location string
+	Account, Data, Email, Namespace, Key, Token, Location, Zip, Backup string
 }
 
 func main() {
+
+	readTOML("preferences.toml")
+	fmt.Println(cf)
+	fmt.Println("****************************\n")
+
 	//get the command arguements
-    	args := os.Args[1:]
-//	fmt.Println(args)
+	//command line can overwrite the data from the preferences file
+	extractCommandLine()
 
-	var commandLineLoc string
-	if len(args) > 0 {
-
-		for i:=0; i < len(args); i++ {
-			commandLineLoc += ","+args[i]
-		}
-	}
-
-	readTOML()
-
-	cf.Location = cf.Location+commandLineLoc
-	fmt.Println("Account:"+cf.Account)
-	fmt.Println("Locations:"+cf.Location)
+//	cf.Location = cf.Location+commandLineLoc
+	fmt.Println(cf)
+	fmt.Println("---"+cf.Email+"---")
+	fmt.Println("-----------------------")	
+/*
 //	verifyKV()
 
 		var fileList = make([]string, 0)
@@ -478,5 +546,5 @@ func main() {
 			//download test
 			fmt.Println(downloadKV(md5file(a[i])))
 		}
-
+*/
 }
