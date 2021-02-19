@@ -79,7 +79,7 @@ func verifyKV() bool {
 	req.Header.Set("Content-Type", "application/json")
 
 	//for write/read
-	bearer := "cBqbac8aKYO570JE6CnT5J0uJvGn5kBvTNyCzZVC"
+	bearer := cf.Token
 	req.Header.Set("Authorization", "Bearer "+bearer)
 	req.Header.Set("X-Auth-Email", cf.Email)
 //	req.Header.Set("X-Auth-Key", cf.Key)
