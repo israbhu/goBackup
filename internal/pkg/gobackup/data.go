@@ -13,7 +13,6 @@ import (
 	"os"
 	"strings"
 	"time"
-	//	"net/url"
 )
 
 //convert hex bytes into a string
@@ -39,9 +38,7 @@ func Md5file(in string) string {
 
 //write data in a stream-like fashion
 func BuildData2(a *Data1) ([]byte, error) {
-
 	var result bytes.Buffer
-	//	result := bytes.NewBufferString("\"value\":\"" + string(fileContents) + "\"")
 
 	for i := 0; i < len(a.TheMetadata); i++ {
 		aMetadata := a.TheMetadata[i]
@@ -57,7 +54,6 @@ func BuildData2(a *Data1) ([]byte, error) {
 
 //write data to disk for a maximum of 100 MB
 func BuildData(a *Data1) string {
-
 	var sb strings.Builder
 
 	//start the array
@@ -68,7 +64,6 @@ func BuildData(a *Data1) string {
 
 	//for loop
 	for i := 0; i < (len(a.TheMetadata) - 1); i++ {
-
 		d := a.TheMetadata[i]
 
 		file, err := os.Open(string(d.FileName))
@@ -112,13 +107,10 @@ func BuildData(a *Data1) string {
 	sb.WriteString("{\"key\":\"")
 	sb.WriteString(d.Hash)
 	sb.WriteString("\",\"value\":\"")
-	//	json.HTMLEscape(&buf, body)
 	escaped := strings.ReplaceAll(string(body), `"`, `\"`)
 	escaped = strings.ReplaceAll(escaped, `\`, `\\`)
 	escaped = strings.ReplaceAll(escaped, "`", "\\`")
 	sb.WriteString(escaped)
-	//	sb.WriteString("Yes, it is the data!")
-	//	sb.WriteString(string(body)) //compress and encrypt?
 	sb.WriteString("\",\"expiration_ttl\":")
 	sb.WriteString("6000")
 	sb.WriteString(",\"Metadata\":{\"")
@@ -183,11 +175,6 @@ func (a Stream) MarshalJSON() ([]byte, error) {
 	//convert from Stream type to string
 	filename := string(a)
 
-	/*
-		sb.WriteString("\",\"value\":\"")
-		json.HTMLEscape(&buf, body)
-		sb.Write(buf.Bytes()) //compress and encrypt?
-	*/
 	file, err := os.Open(filename)
 	if err != nil {
 		fmt.Println(err)
@@ -198,69 +185,21 @@ func (a Stream) MarshalJSON() ([]byte, error) {
 		fmt.Println(err)
 	}
 
-	/*
-		json.HTMLEscape(&buf, body)
-		sb.Write(buf.Bytes()) //compress and encrypt?
-		sb.WriteString("\",\"expiration_ttl\":")
-	*/
-
-	//the entire json item
-	//	result := bytes.NewBufferString("\"" + string(fileContents) + "\"")
-
-	//	var result bytes.Buffer
-
-	//start parens
-	//	result.WriteByte(byte("\""))
 	//escape html
 	base64 := base64.StdEncoding.EncodeToString(fileContents)
 	base64 = "\"" + base64 + "\""
-	//	json.HTMLEscape(&result, []byte(base64))
-
-	/*
-		//beginning quote
-		slice := make([]byte, 1)
-		slice[0] = byte('"')
-
-		slice = append(slice, )
-
-		//end quote
-		slice = append(slice, byte('"'))
-	*/
-
-	//	fmt.Println(result.String())
-	//end parens
-	//	result.WriteByte(byte("\""))
-	//	buffer.WriteString(fileContents)
-	//	file.Read(buffer)
-
-	//end of marshal
-	//	buffer.WriteString("}")
 
 	//dest, source
-	//	json.HTMLEscape(buffer, fileContents)
 	fmt.Printf("Length:%v", len(base64))
 	return []byte(base64), nil
-	//	return result.Bytes(), err
 }
-
-/*
-//to file
-func (a Stream) UnmarshalJSON(b []byte) error {
-
-}
-*/
 
 type Stream string
 
 //this struct stores the Metadata that will be uploaded with each file
 type Metadata struct {
 	//f1o1 = file 1 of 1
-	//f1o4 = file 1 of 4
-	//f2o4 = file 2 of 4
-	//ph:  = previous file hash
-	//fh:  = following file hash
 	//note: = notes
-	//created timestamp
 	//modified timestamp
 	//permissions
 	//folder structure
@@ -284,7 +223,6 @@ type Data1 struct {
 	CF_MAX_DATA_UPLOAD int64 //max data uploaded at a time
 	CF_MAX_DATA_FILE   int64 //max data per file
 
-	//	Hash     []string
 	TheMetadata []Metadata
 }
 
