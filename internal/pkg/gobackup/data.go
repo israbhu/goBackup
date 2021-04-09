@@ -212,6 +212,21 @@ type Metadata struct {
 	Size                                        int64
 }
 
+// ByHash Implements sort.Interface for []Metadata based on the Hash field.
+type ByHash []Metadata
+
+func (h ByHash) Len() int {
+	return len(h)
+}
+
+func (h ByHash) Swap(i, j int) {
+	h[i], h[j] = h[j], h[i]
+}
+
+func (h ByHash) Less(i, j int) bool {
+	return h[i].Hash < h[j].Hash
+}
+
 //******* This struct contains the data tracking uploads*****
 //Redo: Datasize will be size of files
 //      remove hash, use only Metadata => add hash to Metadata
