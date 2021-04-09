@@ -1,45 +1,25 @@
 package main
 
 import (
-	"goLocBackup/internal/pkg/gobackup"
-	"sort"
-
-	//test
 	"bufio"
-
-	//flags
 	"flag"
 	"fmt"
-	"strings"
-
-	//read and write files
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
-	//http
-	"log"
-	//toml
-	//	"github.com/komkom/toml"
 	"github.com/pelletier/go-toml"
+
+	"github.com/israbhu/goBackup/internal/pkg/gobackup"
 )
 
 //***************global variables*************
 var cf gobackup.Account //account credentials and preferences
 var dat gobackup.Data1  //local datastore tracking uploads and Metadata
 var verbose bool        //flag for extra info output to console
-
-/*what do do when uploading data
-done create md5 sum
-
-done compare to the list of hashes
-sort
-
-compress
-encrypt
-done Metadata
-done move it to cloudflare
-*/
 
 //backs up the list of files
 //uploading the data should be the most time consuming portion of the program, so it will pushed into a go routine
@@ -82,20 +62,11 @@ func readTOML(file string) {
 func writeTOML() {
 }
 
-//***************************************************
-
 func check(e error) {
 	if e != nil {
 		panic(e)
 	}
 }
-
-/*
-createEmptyFile := func(name string) {
-        d := []byte("")
-        check(ioutil.WriteFile(name, d, 0644))
-    }
-*/
 
 //check if a file called name exists
 func checkFileExist(name string) bool {
@@ -182,8 +153,6 @@ func getFiles(name string, f []string) []string {
 //yes, email, Account, Data, Email, Namespace, Key, Token, Location string
 //backup strategy, zip, encrypt, verbose, sync, list data, alt pref, no pref
 func extractCommandLine() {
-	//verbose
-	//	var yFlag = flag.Bool("y", false, "Always accept all prompts")
 	var emailFlag = flag.String("email", "", "User email")
 	var accountFlag = flag.String("account", "", "User Account")
 	var nsFlag = flag.String("namespace", "", "User's Namespace")
@@ -195,10 +164,7 @@ func extractCommandLine() {
 	var downloadFlag = flag.String("download", "", "Folder/files to download")
 	var zipFlag = flag.String("zip", "", "zip")
 	var verboseFlag = flag.Bool("v", false, "More information")
-	/*	var encryptFlag = flag.String("crypt", "", "encrypt")
-		var syncFlag = flag.Bool("s", false, "Synchronize local data to the cloud")
-		var listdataFlag = flag.Bool("list", false, "List the data from the local data")
-	*/var altPrefFlag = flag.String("pref", "", "use an alternate preference file")
+	var altPrefFlag = flag.String("pref", "", "use an alternate preference file")
 
 	flag.Parse()
 
@@ -246,10 +212,6 @@ func extractCommandLine() {
 		gobackup.DownloadKV(&cf, *downloadFlag, "download.file")
 		fmt.Println("Downloaded a file!")
 		os.Exit(0)
-		//		locations := *zipFlag
-		fmt.Println("Extracting downloads:" + cf.Location)
-		//		getFiles(cf.Locations)
-
 	}
 
 }
@@ -272,7 +234,6 @@ func searchData(hash string, fileName string) bool {
 			b[0] = b[0][:32] //get the base hash
 		}
 
-		//		fmt.Println(a)
 		if b[0] == hash && fileName == b[1] {
 			return true
 		}
@@ -282,8 +243,6 @@ func searchData(hash string, fileName string) bool {
 
 //create a toml file from a struct
 func dataFile() {
-
-	//	var doc []byte
 	doc, _ := toml.Marshal(&dat)
 
 	fmt.Println(string(doc))
@@ -292,38 +251,35 @@ func dataFile() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	fi, err := os.Lstat("data.dat")
+	_, err = os.Lstat("data.dat")
 	if err != nil {
 		log.Fatalln(err)
 	}
-
-	fmt.Printf("permissions: %#o\n", fi.Mode().Perm()) // 0400, 0777, etc.
-
 }
 
 //******* This struct contains the data needed to access the cloudflare infrastructure. It is stored on drive in the file preferences.toml *****
 type Account struct {
 	//cloudflare account information
-	// namespace is called the "namespace id" on the cloudflare website for Workers KV
-	// account is called "account id" on the cloudflare dashboard
-	// key is also called the "global api key" on cloudflare at https://dash.cloudflare.com/profile/api-tokens
-	// Token is used instead of the key and created on cloudflare at https://dash.cloudflare.com/profile/api-tokens
-	// email is the email associated with your cloudflare account
-
-	Account, Data, Email, Namespace, Key, Token, Location, Zip, Backup string
+	Namespace, // namespace is called the "namespace id" on the cloudflare website for Workers KV
+	Account, // account is called "account id" on the cloudflare dashboard
+	Key, // key is also called the "global api key" on cloudflare at https://dash.cloudflare.com/profile/api-tokens
+	Token, // Token is used instead of the key and created on cloudflare at https://dash.cloudflare.com/profile/api-tokens
+	Email, // email is the email associated with your cloudflare account
+	Data,
+	Location,
+	Zip,
+	Backup string
 }
 
-/*
-extract toml data for account and behaviour information
-extract out the files for backup
-backup the data
-*/
+// extract toml data for account and behaviour information
+// extract out the files for backup
+// backup the data
 func main() {
 
 	fmt.Println(gobackup.GetMetadata(gobackup.Metadata{}))
 	readTOML("preferences.toml")
 	fmt.Println(cf)
-	fmt.Println("****************************\n")
+	fmt.Println("****************************")
 
 	fmt.Println("zipping a file")
 	gobackup.ZipFile("zipsuite.txt", "zipsuite.zip")
@@ -332,48 +288,26 @@ func main() {
 	extractCommandLine()
 
 	//get the filelist for backup
-	var fileList = make([]string, 0)
+	var fileList []string
 
 	backupLocations := strings.Split(cf.Location, ",")
 
-	for i := 0; i < len(backupLocations); i++ {
-		fileList = getFiles(strings.TrimSpace(backupLocations[i]), fileList)
-		//		fileList = getFiles("c:/testdir", fileList)
+	for _, l := range backupLocations {
+		fileList = getFiles(strings.TrimSpace(l), fileList)
 	}
 
-	//	fileList = append(fileList, "am.txt")
-	//fmt.Println("UNSORTED")
-	//fmt.Println(fileList)
 	sort.Strings(fileList)
-	//fmt.Println("SORTED")
-	//fmt.Println(fileList)
-
-	var a []string
 
 	//fill in the Metadata
-	for i := 0; i < len(fileList); i++ {
-
-		hash := gobackup.Md5file(fileList[i])
-		a = append(a, hash)
-	}
-	//	fmt.Println("UNSORTED")
-	//	fmt.Println(a)
-	sort.Strings(a)
-	//	fmt.Println("SORTED")
-	//	fmt.Println(a)
-
-	//fill in the Metadata
-	for i := 0; i < len(fileList); i++ {
-
-		hash := gobackup.Md5file(fileList[i])
+	for _, f := range fileList {
+		hash := gobackup.Md5file(f)
 
 		//if not found
-		if !searchData(hash, fileList[i]) {
-			meta := gobackup.CreateMeta(fileList[i])
+		if !searchData(hash, f) {
+			meta := gobackup.CreateMeta(f)
 			fmt.Println("NOT FOUND AND INCLUDING! " + hash + "-" + gobackup.GetMetadata(meta))
 
 			//update the data struct
-			//			dat.Hash = append(dat.Hash, hash)
 			dat.TheMetadata = append(dat.TheMetadata, meta)
 
 			//TODO: sort the data struct
@@ -396,61 +330,6 @@ func main() {
 	fmt.Println(gobackup.DownloadKV(&cf, dat.TheMetadata[0].Hash, "test.txt"))
 
 	//update the local data file
-	//TODO in the future, I will sort the data file, at the moment, it appends the new data to the end of the file
 	gobackup.DataFile2("data.dat", &dat)
 
-	//	getKVkeys()
-
 } //main
-
-/*
-
-Bulk upload example
-
-curl -X PUT "https://api.cloudflare.com/client/v4/accounts/01a7362d577a6c3019a474fd6f485823/storage/kv/namespaces/0f2ac74b498b48028cb68387c421e279/bulk" \
-     -H "X-Auth-Email: user@example.com" \
-     -H "X-Auth-Key: c2547eb745079dac9320b638f5e225cf483cc5cfdda41" \
-     -H "Content-Type: application/json" \
-     --data '[{"key":"My-Key","value":"Some string","expiration":1578435000,"expiration_ttl":300,"Metadata":{"someMetadataKey":"someMetadataValue"},"base64":false}]'
-
-Writing data in bulk
-You can write more than one key-value pair at a time with wrangler or via the API, up to 10,000 KV pairs. A key and value are required for each KV pair. The entire request size must be less than 100 megabytes. We do not support this from within a Worker script at this time.
-
-You can choose one of two ways to specify when a key should expire:
-
-Set its "expiration", using an absolute time specified in a number of seconds since the UNIX epoch. For example, if you wanted a key to expire at 12:00AM UTC on April 1, 2019, you would set the key’s expiration to 1554076800.
-
-Set its "expiration TTL" (time to live), using a relative number of seconds from the current time. For example, if you wanted a key to expire 10 minutes after creating it, you would set its expiration TTL to 600.
-
-Creating expiring keys
-We talked about the basic form of the put method above, but this call also has an optional third parameter. It accepts an object with optional fields that allow you to customize the behavior of the put. In particular, you can set either expiration or expirationTtl, depending on how you would like to specify the key’s expiration time. In other words, you’d run one of the two commands below to set an expiration when writing a key from within a Worker:
-
-NAMESPACE.put(key, value, {expiration: secondsSinceEpoch})
-
-NAMESPACE.put(key, value, {expirationTtl: secondsFromNow})
-
-These assume that secondsSinceEpoch and secondsFromNow are variables defined elsewhere in your Worker code.
-
-You can also write with an expiration on the command line via Wrangler or via the API
-
-Additionally, if list_complete is false, there are more keys to fetch. You’ll use the cursor property to get more keys. See the Pagination section below for more details.
-
-
-
-my datafile should be:
-Hash:Metadata \n
-
-
-Then we can open the file and insert data in the correct spot
-If we rebuild the file we can simply download the keys and append key name and Metadata, then sort
-*/
-/*
-   https://stackoverflow.com/questions/45429210/how-do-i-check-a-files-permissions-in-linux-using-go
-   //Check 'others' permission
-   m := info.Mode()
-   if m&(1<<2) != 0 {
-       //other users have read permission
-   } else {
-       //other users don't have read permission
-   }
-*/

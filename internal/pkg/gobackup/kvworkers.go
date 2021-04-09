@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	//	"net/url"
 )
 
 //validate that the preferences file has all the correct fields
@@ -36,56 +35,6 @@ func ValidateCF(cloud *Account) bool {
 	//check the length of data
 
 	return pass
-}
-
-func VerifyKV(cf *Account) bool {
-	//max value size = 25 mb
-	//	await namespace.put(key, value)
-	client := &http.Client{}
-
-	//	value, err := ioutil.ReadFile(file)
-	//	check(err)
-
-	//	dataKey := md5file(file)
-
-	//buffer to store our request body as bytes
-	var requestBody bytes.Buffer
-
-	//	requestBody.Write([]byte(value))
-
-	request := "https://api.cloudflare.com/client/v4/user/tokens/verify"
-
-	fmt.Println("Verify token:" + request)
-	//get request to upload the data
-	req, err := http.NewRequest("GET", request, &requestBody)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	//set the content type -- to verify
-	req.Header.Set("Content-Type", "application/json")
-
-	//for write/read
-	bearer := cf.Token
-	req.Header.Set("Authorization", "Bearer "+bearer)
-	req.Header.Set("X-Auth-Email", cf.Email)
-	//	req.Header.Set("X-Auth-Key", cf.Key)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	fmt.Println(resp)
-
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	fmt.Println(string(body))
-
-	return true
 }
 
 //get the stored keys on the account
@@ -139,7 +88,6 @@ func GetKVkeys(cf *Account) {
 //file is a string with the drive location of a file to be uploaded
 func UploadKV(cf *Account, dat *Data1) bool {
 	//max value size = 25 mb
-	//	await namespace.put(key, value)
 
 	fmt.Println("UploadKV starting")
 
@@ -177,7 +125,6 @@ func UploadKV(cf *Account, dat *Data1) bool {
 
 	//set the content type -- to verify
 	req.Header.Set("Content-Type", "application/json")
-	//	req.Header.Set("Content-Type", "multipart/form-data")
 
 	//for write/read
 
@@ -214,7 +161,6 @@ func DownloadKV(cf *Account, dataKey string, filepath string) string {
 	//GET accounts/:account_identifier/storage/kv/namespaces/:namespace_identifier/values/:key_name
 	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + dataKey
 
-	//	req, err := http.NewRequest(http.MethodPut, request, &requestBody)
 	req, err := http.NewRequest("GET", request, nil)
 	if err != nil {
 		log.Fatalln(err)
@@ -232,9 +178,7 @@ func DownloadKV(cf *Account, dataKey string, filepath string) string {
 		req.Header.Set("X-Auth-Key", cf.Key)
 	}
 
-	//	req.Header.Set("Authorization", "Bearer "+bearer)
 	req.Header.Set("X-Auth-Email", cf.Email)
-	//	req.Header.Set("X-Auth-Key", cf.Key)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -244,15 +188,6 @@ func DownloadKV(cf *Account, dataKey string, filepath string) string {
 	fmt.Println(resp)
 
 	defer resp.Body.Close()
-
-	/*
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			log.Fatalln(err)
-		}
-		//	fmt.Println(string(body))
-		// Create the file
-	*/
 
 	out, err := os.Create(filepath)
 	if err != nil {

@@ -1,7 +1,5 @@
 package gobackup
 
-//package main
-
 import (
 	"archive/zip"
 	"fmt"

@@ -1,4 +1,4 @@
-module goLocBackup
+module github.com/israbhu/goBackup
 
 go 1.15
 
