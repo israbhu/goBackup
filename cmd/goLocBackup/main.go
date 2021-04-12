@@ -310,7 +310,7 @@ func main() {
 			//update the data struct
 			dat.TheMetadata = append(dat.TheMetadata, meta)
 
-			//TODO: sort the data struct
+			sort.Sort(gobackup.ByHash(dat.TheMetadata))
 
 			dat.DataSize += meta.Size
 			dat.Count += 1
