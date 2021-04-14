@@ -24,7 +24,9 @@ var verbose bool        //flag for extra info output to console
 //backs up the list of files
 //uploading the data should be the most time consuming portion of the program, so it will pushed into a go routine
 func backup(list []string) {
-	gobackup.UploadKV(&cf, &dat)
+	for _, list := range list {
+		gobackup.UploadKV(&cf, &dat, list)
+	}
 }
 
 //read from a toml file

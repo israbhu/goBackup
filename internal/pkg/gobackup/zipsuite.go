@@ -8,6 +8,7 @@ import (
 	"os"
 )
 
+// creates a zip file named zipname using filename as the source file
 func ZipFile(filename string, zipname string) {
 	fmt.Println("zipfile")
 
@@ -58,6 +59,7 @@ func ZipFile(filename string, zipname string) {
 
 }
 
+// zips a file named filename to the provided pipes pr and pw
 func ZipPipe(pr *io.PipeReader, pw *io.PipeWriter, filename string) {
 
 	//open the file to be zipped

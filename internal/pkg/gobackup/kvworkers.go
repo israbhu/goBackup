@@ -85,8 +85,8 @@ func GetKVkeys(cf *Account) {
 }
 
 //implementation of the workers kv upload
-//file is a string with the drive location of a file to be uploaded
-func UploadKV(cf *Account, dat *Data1) bool {
+//filename is a string with the drive location of a file to be uploaded
+func UploadKV(cf *Account, dat *Data1, filename string) bool {
 	//max value size = 25 mb
 
 	fmt.Println("UploadKV starting")
@@ -95,17 +95,22 @@ func UploadKV(cf *Account, dat *Data1) bool {
 
 	//TODO change BuildData return value to a stream
 	//buildata2 should only build a string as large as 100 MB, must do another upload otherwise
-	stringValue, err := BuildData2(dat)
+	//	stringValue, err := BuildData2(dat)
+	//	if err != nil {
+	//		log.Fatalln(err)
+	//	}
+
+	//	value := []byte(stringValue)
+
+	//buffer to store our request body as bytes
+	//	var requestBody bytes.Buffer
+
+	//	requestBody.Write([]byte(value))
+
+	file, err := os.Open(filename)
 	if err != nil {
 		log.Fatalln(err)
 	}
-
-	value := []byte(stringValue)
-
-	//buffer to store our request body as bytes
-	var requestBody bytes.Buffer
-
-	requestBody.Write([]byte(value))
 
 	//request with Metadata
 	//	      PUT accounts/:account_identifier/storage/kv/namespaces/:namespace_identifier/values/:key_name?expiration=:expiration&expiration_ttl=:expiration_ttl
@@ -118,7 +123,7 @@ func UploadKV(cf *Account, dat *Data1) bool {
 
 	fmt.Println("UPLOAD REQUEST:" + request)
 	//put request to upload the data
-	req, err := http.NewRequest(http.MethodPut, request, &requestBody)
+	req, err := http.NewRequest(http.MethodPut, request, file)
 	if err != nil {
 		log.Fatalln(err)
 	}
