@@ -159,7 +159,8 @@ func CreateMeta(file string) Metadata {
 
 	temp.FileName = Stream(file)
 	temp.Hash = Md5file(file)
-	temp.FileNum = "0"
+	temp.FileNum = 0
+	temp.File = "f1o1"
 	temp.Atime = fi.ModTime()
 	temp.Permissions = fi.Mode().Perm().String()
 	temp.Size = fi.Size()
@@ -205,13 +206,14 @@ type Metadata struct {
 	//permissions
 	//folder structure
 	//Metadata filename:
-	//
+	//FileNum is the current file number (starting from 0) in a file that has been split
 	//Metadata example test.txt:f2o4:ph#:fh#:
-	FileNum, Notes, Permissions, Filepath, Hash string
-	FileName                                    Stream
-	Atime                                       time.Time
-	Size                                        int64
-	pipe                                        *io.PipeReader
+	File, Notes, Permissions, Filepath, Hash string
+	FileNum                                  int
+	FileName                                 Stream
+	Atime                                    time.Time
+	Size                                     int64
+	pipe                                     *io.PipeReader
 }
 
 // ByHash Implements sort.Interface for []Metadata based on the Hash field.

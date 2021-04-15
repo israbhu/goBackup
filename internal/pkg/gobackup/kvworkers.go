@@ -110,17 +110,19 @@ func UploadKV(cf *Account, meta Metadata, filename string) bool {
 		pr, pw := io.Pipe()
 		errCh := make(chan error, 1)
 		go zipInit(filename, pr, pw, errCh)
+
 		written, err = io.CopyN(&fileUpload, pr, 24*1024*1024)
 		if err != nil {
 			log.Fatalln(err)
-		} else { //continue the upload
-			meta.FileNum += 1
-			hash = hash + meta.FileNum
-			written, err = io.CopyN(&fileUpload, meta.pr, 24*1024*1024)
-			if err != nil {
-				log.Fatalln(err)
-			}
 		}
+		
+		meta.FileNum += 1
+		hash = fmt.Sprintf("%s%d", hash, meta.FileNum)
+		written, err = io.CopyN(&fileUpload, meta.pr, 24*1024*1024)
+		if err != nil {
+			log.Fatalln(err)
+		}
+	}
 	} //if
 
 	//if written is exactly at the maximum N, then we haven't finished using the data in the pipe
