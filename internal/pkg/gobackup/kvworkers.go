@@ -86,44 +86,76 @@ func GetKVkeys(cf *Account) {
 
 //implementation of the workers kv upload
 //filename is a string with the drive location of a file to be uploaded
-func UploadKV(cf *Account, dat *Data1, filename string) bool {
-	//max value size = 25 mb
+//hash is the hash of the file
+//A normal hash should be 16 bytes and anything larger indicates the file has been split amoung several files. The additional length is the file number appended to the hash
 
+func UploadKV(cf *Account, meta Metadata, filename string) bool {
+	//max value size = 25 mb
 	fmt.Println("UploadKV starting")
 
 	client := &http.Client{}
 
-	//TODO change BuildData return value to a stream
-	//buildata2 should only build a string as large as 100 MB, must do another upload otherwise
-	//	stringValue, err := BuildData2(dat)
-	//	if err != nil {
-	//		log.Fatalln(err)
-	//	}
+	var fileUpload bytes.Buffer
+	written := 0 //bytes written to fileUpload
+	hash := meta.Hash
 
-	//	value := []byte(stringValue)
+	/*	fmt.Fprintf(&fileUpload, "size: %d", 85)
+		written += 1
+		hash = hash + "1"
+	*/
 
-	//buffer to store our request body as bytes
-	//	var requestBody bytes.Buffer
+	if meta.FileNum == 0 {
 
-	//	requestBody.Write([]byte(value))
+		//open a pipe
+		pr, pw := io.Pipe()
+		errCh := make(chan error, 1)
+		go zipInit(filename, pr, pw, errCh)
+		written, err = io.CopyN(&fileUpload, pr, 24*1024*1024)
+		if err != nil {
+			log.Fatalln(err)
+		} else { //continue the upload
+			meta.FileNum += 1
+			hash = hash + meta.FileNum
+			written, err = io.CopyN(&fileUpload, meta.pr, 24*1024*1024)
+			if err != nil {
+				log.Fatalln(err)
+			}
+		}
+	} //if
 
-	file, err := os.Open(filename)
-	if err != nil {
-		log.Fatalln(err)
+	//if written is exactly at the maximum N, then we haven't finished using the data in the pipe
+	if written == 24*1024*1024 {
+		meta.pipe = pr
+		UploadKV(cf, meta, filename)
 	}
+
+	//copy from file to the writer
+	//		zipFile, _ := os.Create("file.zip")
+	// Do stuff with pr here.
+	//		_, _ = io.Copy(zipFile, pr)
+	//create the zip file
+	//		zipFile.Close()
+	//file.Close()
+	//	var exitCode int
+	//	exitCode = 5
+
+	//file, err := os.Open(filename)
+	//if err != nil {
+	//	log.Fatalln(err)
+	//}
 
 	//request with Metadata
 	//	      PUT accounts/:account_identifier/storage/kv/namespaces/:namespace_identifier/values/:key_name?expiration=:expiration&expiration_ttl=:expiration_ttl
 	//bulk request
-	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/bulk"
+	//	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/bulk"
 	//request accounts/:account_identifier/storage/kv/namespaces/:namespace_identifier/values/:key_name
 
 	//normal
-	//	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + dataKey
+	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + hash
 
 	fmt.Println("UPLOAD REQUEST:" + request)
 	//put request to upload the data
-	req, err := http.NewRequest(http.MethodPut, request, file)
+	req, err := http.NewRequest(http.MethodPut, request, &fileUpload)
 	if err != nil {
 		log.Fatalln(err)
 	}

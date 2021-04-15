@@ -4,75 +4,54 @@ import (
 	"archive/zip"
 	"fmt"
 	"io"
-	"log"
 	"os"
 )
 
-// creates a zip file named zipname using filename as the source file
-func ZipFile(filename string, zipname string) {
-	fmt.Println("zipfile")
+/* Sample use case
 
-	//open the file to be zipped
-	file, err := os.Open(filename)
-	if err != nil {
-		log.Println(err)
-	}
+//open a pipe
+pr, pw := io.Pipe()
+errCh := make(chan error, 1)
+go zipInit(pr, pw, errCh)
 
-	defer file.Close()
+//copy from file to the writer
+zipFile, _ := os.Create("file.zip")
+// Do stuff with pr here.
+_, _ = io.Copy(zipFile, pr)
+//create the zip file
+zipFile.Close()
+//file.Close()
+var exitCode int
 
-	//get the fileInfo => will be transferred to zip
-	fileInfo, _ := file.Stat()
-
-	//create the zip file
-	zipFile, err := os.Create(zipname)
-	if err != nil {
-		log.Println(err)
-	}
-	defer zipFile.Close()
-
-	//create a zip writer
-	zipWriter := zip.NewWriter(zipFile)
-	defer zipWriter.Close()
-
-	//create a zip file header
-	fh, error := zip.FileInfoHeader(fileInfo)
-	if error != nil {
-		fmt.Println("File Info error")
-	}
-
-	//alter the name of the file, can use full path
-	workingDir, _ := os.Getwd()
-	fullPath := workingDir + filename
-	fh.Name = fullPath
-
-	//specify the method of zipping
-	fh.Method = zip.Deflate
-
-	//create the new zip header
-	writer, _ := zipWriter.CreateHeader(fh)
-
-	//copy from file to the writer
-	_, err = io.Copy(writer, file)
-	if err != nil {
-		log.Println(err)
-	}
-
+if err, ok := <-errCh; ok {
+	fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	exitCode = 1
 }
 
-// zips a file named filename to the provided pipes pr and pw
-func ZipPipe(pr *io.PipeReader, pw *io.PipeWriter, filename string) {
+os.Exit(exitCode)
 
+
+
+*/
+
+//create a zip using pipes
+//must use in a go routine
+func zipInit(filename string, pr *io.PipeReader, pw *io.PipeWriter, errCh chan error) {
+	defer close(errCh)
+	defer pw.Close()
 	//open the file to be zipped
 	file, err := os.Open(filename)
 	if err != nil {
-		log.Println(err)
+		errCh <- err
+		return
 	}
 	defer file.Close()
 
 	//get the fileInfo => will be transferred to zip
 	fileInfo, err := file.Stat()
 	if err != nil {
-		log.Println(err)
+		errCh <- err
+		return
 	}
 
 	//create a zip writer
@@ -80,59 +59,54 @@ func ZipPipe(pr *io.PipeReader, pw *io.PipeWriter, filename string) {
 	defer zipWriter.Close()
 
 	//create a zip file header
-	fh, error := zip.FileInfoHeader(fileInfo)
-	if error != nil {
-		fmt.Println("File Info error")
+	fh, err := zip.FileInfoHeader(fileInfo)
+	if err != nil {
+		errCh <- err
+		return
 	}
 
 	//alter the name of the file, can use full path
-	workingDir, _ := os.Getwd()
-	workingDir = workingDir[3:]
-
-	fullPath := workingDir + string(os.PathSeparator) + filename
-	fmt.Println("THE FULL PATH:" + fullPath)
-	fh.Name = fullPath
+	fh.Name = "theGo.mod"
 
 	//specify the method of zipping
 	fh.Method = zip.Deflate
 
 	//create the new zip header
-	writer, _ := zipWriter.CreateHeader(fh)
+	writer, err := zipWriter.CreateHeader(fh)
+	if err != nil {
+		errCh <- err
+		return
+	}
 
-	//move data into the pipe
-	_, _ = io.Copy(writer, file)
-
-	//flush and close the writer
-	zipWriter.Close()
-
-	//close data pipe, signalling the end
-	pw.Close()
-	//	fmt.Printf("Wrote %v\n", n)
+	n, err := io.Copy(writer, file)
+	if err != nil {
+		errCh <- err
+		return
+	}
+	fmt.Printf("Wrote %d Bytes\n", n)
 }
 
 /*
 func main() {
-
-	fmt.Println("Start zip!")
-
+	//open a pipe
 	pr, pw := io.Pipe()
-	defer pr.Close()
-	defer pw.Close()
+	errCh := make(chan error, 1)
+	go zipInit(pr, pw, errCh)
 
-	go zipPipe(pr, pw, "README.txt")
+	//copy from file to the writer
+	zipFile, _ := os.Create("file.zip")
+	// Do stuff with pr here.
+	_, _ = io.Copy(zipFile, pr)
+	//create the zip file
+	zipFile.Close()
+	//file.Close()
+	var exitCode int
 
-	myzip, err := os.Create("readme.zip")
-	if err != nil {
-		log.Println(err)
+	if err, ok := <-errCh; ok {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		exitCode = 1
 	}
 
-	io.Copy(myzip, pr)
-
-	fmt.Println("next zip")
-	//	piper, pipew := io.Pipe()
-
-	zipFile("test.txt", "test.zip")
-	fmt.Println("done zip")
-
+	os.Exit(exitCode)
 }
 */

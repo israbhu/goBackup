@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -158,7 +159,7 @@ func CreateMeta(file string) Metadata {
 
 	temp.FileName = Stream(file)
 	temp.Hash = Md5file(file)
-	temp.FileNum = "f1o1"
+	temp.FileNum = "0"
 	temp.Atime = fi.ModTime()
 	temp.Permissions = fi.Mode().Perm().String()
 	temp.Size = fi.Size()
@@ -210,6 +211,7 @@ type Metadata struct {
 	FileName                                    Stream
 	Atime                                       time.Time
 	Size                                        int64
+	pipe                                        *io.PipeReader
 }
 
 // ByHash Implements sort.Interface for []Metadata based on the Hash field.
@@ -233,7 +235,7 @@ func (h ByHash) Less(i, j int) bool {
 //
 type Data1 struct {
 	DataSize           int64 //keeps track of the byte size of the uploads
-	Count              int   //keeps track of the number of uploads
+	Count              int   //keeps track of the number of files
 	CF_MAX_UPLOAD      int   //max number of files for upload
 	CF_MAX_DATA_UPLOAD int64 //max data uploaded at a time
 	CF_MAX_DATA_FILE   int64 //max data per file
