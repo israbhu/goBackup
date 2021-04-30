@@ -21,11 +21,13 @@ func hashToString(in []byte) string {
 	return hex.EncodeToString(in)
 }
 
+/*
 //run md5 hash on a string
 func md5string(a string) string {
 	data := md5.Sum([]byte(a))
 	return hashToString(data[:])
 }
+*/
 
 //run md5 hash on a file
 func Md5file(in string) string {
@@ -157,7 +159,7 @@ func CreateMeta(file string) Metadata {
 
 	fmt.Printf("permissions: %#o\n", fi.Mode().Perm()) // 0400, 0777, etc.
 
-	temp.FileName = Stream(file)
+	temp.FileName = file
 	temp.Hash = Md5file(file)
 	temp.FileNum = 0
 	temp.File = "f1o1"
@@ -168,7 +170,8 @@ func CreateMeta(file string) Metadata {
 }
 
 func GetMetadata(d Metadata) string {
-	return string(d.FileName) + ":" + d.FileNum + ":" + d.Notes + ":" + d.Atime.String()
+	return fmt.Sprintf("%v:%v:%v:%v", d.FileName, d.FileNum, d.Notes, d.Atime)
+	//	return d.FileName + ":" + d.FileNum + ":" + d.Notes + ":" + d.Atime.String()
 }
 
 func (a Stream) MarshalJSON() ([]byte, error) {
@@ -210,10 +213,10 @@ type Metadata struct {
 	//Metadata example test.txt:f2o4:ph#:fh#:
 	File, Notes, Permissions, Filepath, Hash string
 	FileNum                                  int
-	FileName                                 Stream
+	FileName                                 string
 	Atime                                    time.Time
 	Size                                     int64
-	pipe                                     *io.PipeReader
+	pr                                       *io.PipeReader
 }
 
 // ByHash Implements sort.Interface for []Metadata based on the Hash field.

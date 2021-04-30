@@ -23,9 +23,9 @@ var verbose bool        //flag for extra info output to console
 
 //backs up the list of files
 //uploading the data should be the most time consuming portion of the program, so it will pushed into a go routine
-func backup(list []string) {
-	for _, list := range list {
-		gobackup.UploadKV(&cf, &dat, list)
+func backup() {
+	for _, list := range dat.TheMetadata {
+		gobackup.UploadKV(&cf, list)
 	}
 }
 
@@ -283,8 +283,8 @@ func main() {
 	fmt.Println(cf)
 	fmt.Println("****************************")
 
-	fmt.Println("zipping a file")
-	gobackup.ZipFile("zipsuite.txt", "zipsuite.zip")
+	//	fmt.Println("zipping a file")
+	//	gobackup.ZipFile("zipsuite.txt", "zipsuite.zip")
 	//get the command arguments
 	//command line can overwrite the data from the preferences file
 	extractCommandLine()
@@ -328,7 +328,8 @@ func main() {
 
 	fmt.Printf("Data Size: %v, Data Count: %v", dat.DataSize, dat.Count)
 	//split the work and backup
-	backup(fileList)
+	backup()
+
 	fmt.Println(gobackup.DownloadKV(&cf, dat.TheMetadata[0].Hash, "test.txt"))
 
 	//update the local data file

@@ -89,14 +89,18 @@ func GetKVkeys(cf *Account) {
 //hash is the hash of the file
 //A normal hash should be 16 bytes and anything larger indicates the file has been split amoung several files. The additional length is the file number appended to the hash
 
-func UploadKV(cf *Account, meta Metadata, filename string) bool {
+func UploadKV(cf *Account, meta Metadata) bool {
+
+	filename := meta.FileName
 	//max value size = 25 mb
 	fmt.Println("UploadKV starting")
 
 	client := &http.Client{}
 
 	var fileUpload bytes.Buffer
-	written := 0 //bytes written to fileUpload
+	//	var written int64
+
+	//	written = 0 //bytes written to fileUpload
 	hash := meta.Hash
 
 	/*	fmt.Fprintf(&fileUpload, "size: %d", 85)
@@ -111,24 +115,36 @@ func UploadKV(cf *Account, meta Metadata, filename string) bool {
 		errCh := make(chan error, 1)
 		go zipInit(filename, pr, pw, errCh)
 
-		written, err = io.CopyN(&fileUpload, pr, 24*1024*1024)
+		//copy up to 24MB using the pipereader
+		written, err := io.CopyN(&fileUpload, pr, 24*1024*1024)
 		if err != nil {
+			fmt.Printf("Bytes written:%v", written)
 			log.Fatalln(err)
 		}
-		
-		meta.FileNum += 1
-		hash = fmt.Sprintf("%s%d", hash, meta.FileNum)
-		written, err = io.CopyN(&fileUpload, meta.pr, 24*1024*1024)
-		if err != nil {
-			log.Fatalln(err)
-		}
-	}
-	} //if
 
-	//if written is exactly at the maximum N, then we haven't finished using the data in the pipe
-	if written == 24*1024*1024 {
-		meta.pipe = pr
-		UploadKV(cf, meta, filename)
+		//if written is exactly at the maximum N, then we haven't finished using the data in the pipe
+		if written == 24*1024*1024 {
+			meta.FileNum += 1
+			meta.pr = pr
+			UploadKV(cf, meta)
+		}
+
+	} else {
+
+		//create the hash with appended file number
+		hash = fmt.Sprintf("%s%d", hash, meta.FileNum)
+
+		//copy up to 24MB using the pipereader
+		written, err := io.CopyN(&fileUpload, meta.pr, 24*1024*1024)
+		if err != nil {
+			log.Fatalln(err)
+		}
+
+		//if written is exactly at the maximum N, then we haven't finished using the data in the pipe
+		if written == 24*1024*1024 {
+			meta.FileNum += 1
+			UploadKV(cf, meta)
+		}
 	}
 
 	//copy from file to the writer
