@@ -326,7 +326,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	fmt.Printf("Data Size: %v, Data Count: %v", dat.DataSize, dat.Count)
+	fmt.Printf("Original File: %s, Data Size: %v, Data Count: %v", dat.TheMetadata[0].FileName, dat.DataSize, dat.Count)
 	//split the work and backup
 	backup()
 

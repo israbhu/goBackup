@@ -122,9 +122,8 @@ func UploadKV(cf *Account, meta Metadata) bool {
 
 		//copy up to 24MB using the pipereader
 		written, err := io.CopyN(&fileUpload, pr, 24*1024*1024)
-		if err != nil {
-			fmt.Printf("Bytes written:%v", written)
-			log.Fatalln(err)
+		if err != nil && err != io.EOF {
+			log.Fatalf("Bytes written: %d, err: %v\n", written, err)
 		}
 
 		//if written is exactly at the maximum N, then we haven't finished using the data in the pipe

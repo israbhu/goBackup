@@ -72,6 +72,13 @@ func fileAccess(filename string, lastAccess time.Time, lastModify time.Time) {
 //create a zstandard compressed file
 func zStandardInit(filename string, pw *io.PipeWriter) {
 	defer pw.Close()
+
+	enc, err := zstd.NewWriter(pw)
+	if err != nil {
+		fmt.Printf("newWriter error:%v", err)
+	}
+	defer enc.Close()
+
 	//open the file to be zipped
 	file, err := os.Open(filename)
 	if err != nil {
@@ -79,16 +86,12 @@ func zStandardInit(filename string, pw *io.PipeWriter) {
 	}
 	defer file.Close()
 
-	enc, err := zstd.NewWriter(pw)
-	if err != nil {
-		fmt.Printf("newWriter error:%v", err)
-	}
 	written, err := io.Copy(enc, file)
 	if err != nil {
 		fmt.Printf("io.Copy error:%v", err)
 		enc.Close()
 	}
-	fmt.Printf("Successfully written:%v", written)
+	fmt.Printf("Successfully encoded bytes: %d\n", written)
 	//	return enc.Close()
 
 }
