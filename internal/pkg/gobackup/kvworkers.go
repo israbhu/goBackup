@@ -8,7 +8,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 )
+
+var wg sync.WaitGroup
 
 //validate that the preferences file has all the correct fields
 func ValidateCF(cloud *Account) bool {
@@ -102,6 +105,7 @@ func UploadKV(cf *Account, meta Metadata) bool {
 
 	//	written = 0 //bytes written to fileUpload
 	hash := meta.Hash
+	metadata := fmt.Sprintf("%v:%v:%v", meta.FileName, meta.Filepath, meta.FileNum)
 
 	/*	fmt.Fprintf(&fileUpload, "size: %d", 85)
 		written += 1
@@ -112,8 +116,9 @@ func UploadKV(cf *Account, meta Metadata) bool {
 
 		//open a pipe
 		pr, pw := io.Pipe()
-		errCh := make(chan error, 1)
-		go zipInit(filename, pr, pw, errCh)
+		//		errCh := make(chan error, 1)
+		//		go zipInit(filename, pr, pw, errCh)
+		go zStandardInit(filename, pw)
 
 		//copy up to 24MB using the pipereader
 		written, err := io.CopyN(&fileUpload, pr, 24*1024*1024)
@@ -124,9 +129,13 @@ func UploadKV(cf *Account, meta Metadata) bool {
 
 		//if written is exactly at the maximum N, then we haven't finished using the data in the pipe
 		if written == 24*1024*1024 {
+			fmt.Printf("***File is larger than 24MB, new upload initiated***")
 			meta.FileNum += 1
 			meta.pr = pr
-			UploadKV(cf, meta)
+
+			//asynchronousUpload
+			wg.Add(1)
+			go UploadKV(cf, meta)
 		}
 
 	} else {
@@ -142,9 +151,17 @@ func UploadKV(cf *Account, meta Metadata) bool {
 
 		//if written is exactly at the maximum N, then we haven't finished using the data in the pipe
 		if written == 24*1024*1024 {
+			fmt.Printf("***File is larger than 24MB, new upload initiated***")
+
 			meta.FileNum += 1
-			UploadKV(cf, meta)
+
+			//asynchronousUpload
+			wg.Add(1)
+			go UploadKV(cf, meta)
 		}
+
+		//decrement waitgroup
+		wg.Done()
 	}
 
 	//copy from file to the writer
@@ -169,8 +186,8 @@ func UploadKV(cf *Account, meta Metadata) bool {
 	//request accounts/:account_identifier/storage/kv/namespaces/:namespace_identifier/values/:key_name
 
 	//normal
-	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + hash
-
+	// 5/10/21	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + hash
+	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + hash + "?metadata=" + metadata
 	fmt.Println("UPLOAD REQUEST:" + request)
 	//put request to upload the data
 	req, err := http.NewRequest(http.MethodPut, request, &fileUpload)
@@ -205,6 +222,10 @@ func UploadKV(cf *Account, meta Metadata) bool {
 	}
 	fmt.Println(string(body))
 	fmt.Println("Done with uploadKV")
+
+	//wait for all uploads and downloads to complete
+	wg.Wait()
+
 	return true
 }
 

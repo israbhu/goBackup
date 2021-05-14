@@ -4,11 +4,15 @@ import (
 	"archive/zip"
 	"fmt"
 	"io"
+	"log"
 	"os"
+	"time"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 /* Sample use case
-
+0
 //open a pipe
 pr, pw := io.Pipe()
 errCh := make(chan error, 1)
@@ -34,6 +38,98 @@ os.Exit(exitCode)
 
 */
 
+// Change permissions Linux.
+func filePermissions(filename string, filemode uint32) {
+	//default filemode is all read write and execute
+	if filemode <= 0 {
+		filemode = 0777
+	}
+
+	err := os.Chmod(filename, os.FileMode(filemode))
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func fileOwner(filename string) {
+	// Change file ownership.
+	err := os.Chown(filename, os.Getuid(), os.Getgid())
+	if err != nil {
+		log.Println(err)
+	}
+}
+func fileAccess(filename string, lastAccess time.Time, lastModify time.Time) {
+	// Change file timestamps.
+	//		addOneDayFromNow := time.Now().Add(24 * time.Hour)
+	//		lastAccessTime := addOneDayFromNow
+	//		lastModifyTime := addOneDayFromNow
+	err := os.Chtimes(filename, lastAccess, lastModify)
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+//create a zstandard compressed file
+func zStandardInit(filename string, pw *io.PipeWriter) {
+	defer pw.Close()
+	//open the file to be zipped
+	file, err := os.Open(filename)
+	if err != nil {
+		fmt.Printf("Error in zStandardInit: %v", err)
+	}
+	defer file.Close()
+
+	enc, err := zstd.NewWriter(pw)
+	if err != nil {
+		fmt.Printf("newWriter error:%v", err)
+	}
+	written, err := io.Copy(enc, file)
+	if err != nil {
+		fmt.Printf("io.Copy error:%v", err)
+		enc.Close()
+	}
+	fmt.Printf("Successfully written:%v", written)
+	//	return enc.Close()
+
+}
+
+//decompress a zstandard compressed file
+func zStandardDecompress(filename string, pr *io.PipeReader, pw *io.PipeWriter) {
+
+	/*
+		    d, err := zstd.NewReader(in)
+		    if err != nil {
+		        return err
+		    }
+		    defer d.Close()
+
+		    // Copy content...
+		    _, err = io.Copy(out, d)
+		    return err
+		36
+	*/
+	defer pw.Close()
+	//open the file to be zipped
+	file, err := os.Create(filename)
+	if err != nil {
+		fmt.Printf("Error in zStandardDecompress: %v", err)
+	}
+	defer file.Close()
+
+	dec, err := zstd.NewReader(pr)
+	if err != nil {
+		fmt.Printf("newReader error:%v", err)
+	}
+	written, err := io.Copy(pw, dec)
+	if err != nil {
+		fmt.Printf("io.Copy error:%v", err)
+		dec.Close()
+	}
+	fmt.Printf("Successfully written:%v", written)
+	//	return enc.Close()6*
+
+}
+
 //create a zip using pipes
 //must use in a go routine
 func zipInit(filename string, pr *io.PipeReader, pw *io.PipeWriter, errCh chan error) {
@@ -41,6 +137,8 @@ func zipInit(filename string, pr *io.PipeReader, pw *io.PipeWriter, errCh chan e
 	defer pw.Close()
 	//open the file to be zipped
 	file, err := os.Open(filename)
+
+	//TODO: change file and time permissions
 	if err != nil {
 		errCh <- err
 		return
