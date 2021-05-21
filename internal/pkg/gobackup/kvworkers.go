@@ -2,6 +2,7 @@ package gobackup
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -130,8 +131,7 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 		log.Fatalln(err)
 	}
 
-	metadata := fmt.Sprintf("%v:%v:%v", meta.FileName, meta.Filepath, meta.FileNum)
-	formWriter.Write([]byte(metadata))
+	json.NewEncoder(formWriter).Encode(meta)
 
 	/*
 	   for key, r := range values {
@@ -182,6 +182,7 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 
 	req.Header.Set("X-Auth-Email", cf.Email)
 
+	fmt.Printf("Request to be sent: %+v\n", req)
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Fatalln(err)
