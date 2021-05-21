@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"sync"
@@ -47,7 +48,7 @@ func GetKVkeys(cf *Account) {
 	//buffer to store our request body as bytes
 	var requestBody bytes.Buffer
 
-	//request     accounts/:account_identifier/storage/kv/namespaces/:namespace_identifier/values/:key_name
+	//request     accounts/:account_identifier/storage/kv/namespaces/:namespace_i3dentifier/values/:key_name
 	//request GET accounts/:account_identifier/storage/kv/namespaces/:namespace_identifier/keys
 	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/keys"
 
@@ -87,6 +88,122 @@ func GetKVkeys(cf *Account) {
 	fmt.Println(string(body))
 }
 
+//func UploadMultiPart(client *http.Client, url string, values map[string]io.Reader, filename string) (err error) {
+func UploadMultiPart(cf *Account, meta Metadata) bool {
+
+	filename := meta.FileName
+	//max value size = 25 mb
+	fmt.Println("UploadKV starting")
+
+	client := &http.Client{}
+
+	var fileUpload bytes.Buffer
+
+	hash := meta.Hash
+
+	// Prepare a form that you will submit to that URL.
+	//	var b bytes.Buffer
+
+	//get a multipart writer
+	w := multipart.NewWriter(&fileUpload)
+
+	formWriter, err := w.CreateFormFile("value", filename)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	//open a pipe
+	pr, pw := io.Pipe()
+	//		errCh := make(chan error, 1)
+	//		go zipInit(filename, pr, pw, errCh)
+	go zStandardInit(filename, pw)
+
+	//copy up to 24MB using the pipereader
+	written, err := io.CopyN(formWriter, pr, 24*1024*1024)
+	if err != nil && err != io.EOF {
+		fmt.Printf("Err != nil, Bytes written:%v", written)
+		log.Fatalln(err)
+	}
+
+	formWriter, err = w.CreateFormField("metadata")
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	metadata := fmt.Sprintf("%v:%v:%v", meta.FileName, meta.Filepath, meta.FileNum)
+	formWriter.Write([]byte(metadata))
+
+	/*
+	   for key, r := range values {
+	       var fw io.Writer
+	       if x, ok := r.(io.Closer); ok {
+	           defer x.Close()
+	       }
+	       // Add an image file
+	       if x, ok := r.(*os.File); ok {
+	           if fw, err = w.CreateFormFile(key, x.Name()); err != nil {
+	               return
+	           }
+	       } else {
+	           // Add other fields
+	           if fw, err = w.CreateFormField(key); err != nil {
+	               return
+	           }
+	       }
+	       if _, err = io.Copy(fw, r); err != nil {
+	           return err
+	       }
+
+	   }
+	*/
+
+	// Don't forget to close the multipart writer.
+	// If you don't close it, your request will be missing the terminating boundary.
+	w.Close()
+
+	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + hash
+	//	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/valu
+
+	fmt.Println("UPLOAD REQUEST:" + request)
+	//put request to upload the data
+	req, err := http.NewRequest(http.MethodPut, request, &fileUpload)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	// Don't forget to set the content type, this will contain the boundary.
+	req.Header.Set("Content-Type", w.FormDataContentType())
+
+	if cf.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+cf.Token)
+	} else if cf.Key != "" {
+		req.Header.Set("X-Auth-Key", cf.Key)
+	}
+
+	req.Header.Set("X-Auth-Email", cf.Email)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	fmt.Println(resp)
+
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	fmt.Println(string(body))
+	fmt.Println("Done with uploadKV")
+
+	//wait for all uploads and downloads to complete
+	wg.Wait()
+
+	return true
+
+}
+
 //implementation of the workers kv upload
 //filename is a string with the drive location of a file to be uploaded
 //hash is the hash of the file
@@ -105,7 +222,7 @@ func UploadKV(cf *Account, meta Metadata) bool {
 
 	//	written = 0 //bytes written to fileUpload
 	hash := meta.Hash
-	metadata := fmt.Sprintf("%v:%v:%v", meta.FileName, meta.Filepath, meta.FileNum)
+	//	metadata := fmt.Sprintf("%v:%v:%v", meta.FileName, meta.Filepath, meta.FileNum)
 
 	/*	fmt.Fprintf(&fileUpload, "size: %d", 85)
 		written += 1
@@ -186,7 +303,8 @@ func UploadKV(cf *Account, meta Metadata) bool {
 
 	//normal
 	// 5/10/21	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + hash
-	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + hash + "?metadata=" + metadata
+	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + hash + "?value=testvalue?metadata=testmetadata"
+	//	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/valu
 	fmt.Println("UPLOAD REQUEST:" + request)
 	//put request to upload the data
 	req, err := http.NewRequest(http.MethodPut, request, &fileUpload)

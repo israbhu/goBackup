@@ -25,7 +25,8 @@ var verbose bool        //flag for extra info output to console
 //uploading the data should be the most time consuming portion of the program, so it will pushed into a go routine
 func backup() {
 	for _, list := range dat.TheMetadata {
-		gobackup.UploadKV(&cf, list)
+		//		gobackup.UploadKV(&cf, list)
+		gobackup.UploadMultiPart(&cf, list)
 	}
 }
 
@@ -37,6 +38,8 @@ func readTOML(file string) {
 		log.Fatalln(err)
 	}
 	astring := string(dat)
+
+	fmt.Println("File as string: " + astring)
 
 	doc2 := []byte(astring)
 
@@ -50,6 +53,11 @@ func readTOML(file string) {
 
 	} else {
 		toml.Unmarshal(doc2, &cf)
+
+		fmt.Printf("Unmarshalling the preferences file:%v\n", file)
+		fmt.Println("Contents of file:")
+		fmt.Println(cf)
+		fmt.Println("Contents of file end")
 
 		//verbose flag
 		if verbose {
@@ -118,6 +126,7 @@ func mkdir(name string) {
 func getFiles(name string, f []string) []string {
 	//make sure name is valid
 	if name == "" {
+		fmt.Println("getFiles name is blank, getting files from local directory")
 		name = "."
 	}
 
@@ -292,6 +301,8 @@ func main() {
 	//get the filelist for backup
 	var fileList []string
 
+	fmt.Printf("CF LOCATION:%v", cf.Location)
+
 	backupLocations := strings.Split(cf.Location, ",")
 
 	for _, l := range backupLocations {
@@ -320,6 +331,10 @@ func main() {
 			fmt.Println("FOUND AND EXCLUDING! " + hash)
 		}
 	} //for
+
+	//get keys
+	fmt.Println("Getting the keys and metadata!")
+	gobackup.GetKVkeys(&cf)
 
 	if len(dat.TheMetadata) == 0 {
 		fmt.Println("All files are up to date! Exiting!")
