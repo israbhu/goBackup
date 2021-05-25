@@ -130,32 +130,12 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 	if err != nil {
 		log.Fatalln(err)
 	}
-
-	json.NewEncoder(formWriter).Encode(meta)
-
+	metadata := fmt.Sprintf("{\"File\":\"%v\", \"Notes\":\"%v\", \"Permissions\":\"%v\", \"filepath\":\"%v\"}", meta.File, meta.Notes, meta.Permissions, meta.Filepath)
+	formWriter.Write([]byte(metadata)) //send metadata
 	/*
-	   for key, r := range values {
-	       var fw io.Writer
-	       if x, ok := r.(io.Closer); ok {
-	           defer x.Close()
-	       }
-	       // Add an image file
-	       if x, ok := r.(*os.File); ok {
-	           if fw, err = w.CreateFormFile(key, x.Name()); err != nil {
-	               return
-	           }
-	       } else {
-	           // Add other fields
-	           if fw, err = w.CreateFormField(key); err != nil {
-	               return
-	           }
-	       }
-	       if _, err = io.Copy(fw, r); err != nil {
-	           return err
-	       }
-
-	   }
+	   {"File":"f1o1","Notes":"","Permissions":"-rw-rw-rw-","filepath":"","Hash":"160c9595326a627146f1feee993b6bb6","file_num":0,"FileName":"LICENSE","mtime":"2021-04-13T19:02:06.8520444-05:00","Size":1095}
 	*/
+	//	json.NewEncoder(formWriter).Encode(meta)
 
 	// Don't forget to close the multipart writer.
 	// If you don't close it, your request will be missing the terminating boundary.
@@ -190,14 +170,24 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 
 	fmt.Println(resp)
 
+	var response cloudflareResponse
+
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	fmt.Println(string(body))
-	fmt.Println("Done with uploadKV")
+	json.Unmarshal(body, &response)
 
+	if !response.Success {
+		fmt.Println("***Body of response***")
+		fmt.Println(string(body))
+		fmt.Println("***End Body of response***")
+		fmt.Println("File was not uploaded, exiting")
+		log.Fatalln("No upload!")
+	} else {
+		fmt.Printf("Successfully uploaded %v\n", filename)
+	}
 	//wait for all uploads and downloads to complete
 	wg.Wait()
 
@@ -409,4 +399,11 @@ type Account struct {
 	// email is the email associated with your cloudflare account
 
 	Account, Data, Email, Namespace, Key, Token, Location, Zip, Backup string
+}
+
+type cloudflareResponse struct {
+	Result   string   `json:"result"`
+	Success  bool     `json:"success"`
+	Errors   []string `json:"errors"`
+	Messages []string `json:"messages"`
 }
