@@ -162,7 +162,7 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 
 	req.Header.Set("X-Auth-Email", cf.Email)
 
-	fmt.Printf("Request to be sent: %+v\n", req)
+	fmt.Printf("Request to be sent: %+q\n", req)
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Fatalln(err)
