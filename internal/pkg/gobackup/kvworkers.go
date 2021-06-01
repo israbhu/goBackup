@@ -130,12 +130,12 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	metadata := fmt.Sprintf("{\"File\":\"%v\", \"Notes\":\"%v\", \"Permissions\":\"%v\", \"filepath\":\"%v\"}", meta.File, meta.Notes, meta.Permissions, meta.Filepath)
-	formWriter.Write([]byte(metadata)) //send metadata
-	/*
-	   {"File":"f1o1","Notes":"","Permissions":"-rw-rw-rw-","filepath":"","Hash":"160c9595326a627146f1feee993b6bb6","file_num":0,"FileName":"LICENSE","mtime":"2021-04-13T19:02:06.8520444-05:00","Size":1095}
-	*/
-	//	json.NewEncoder(formWriter).Encode(meta)
+
+	jsonBytes, err := json.Marshal(meta)
+	if err != nil {
+		log.Fatalf("Could not marshal metadata %+v: %v", meta, err)
+	}
+	formWriter.Write(jsonBytes) //send metadata
 
 	// Don't forget to close the multipart writer.
 	// If you don't close it, your request will be missing the terminating boundary.
@@ -162,7 +162,7 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 
 	req.Header.Set("X-Auth-Email", cf.Email)
 
-	fmt.Printf("Request to be sent: %+v\n", req)
+	fmt.Printf("Request to be sent: %+q\n", req)
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Fatalln(err)
