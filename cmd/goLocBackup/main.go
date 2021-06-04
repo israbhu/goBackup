@@ -309,7 +309,7 @@ func main() {
 	}
 
 	//make sure the preferences are valid
-	validatePreferences()
+	//	validatePreferences()
 	gobackup.ValidateCF(&cf)
 
 	//the filelist for backup

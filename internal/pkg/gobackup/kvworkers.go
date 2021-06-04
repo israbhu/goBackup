@@ -22,20 +22,20 @@ func ValidateCF(cloud *Account) bool {
 
 	//check the required fields are not blank
 	if cloud.Email == "" {
+		log.Fatalf("Email information is empty. Please edit your preferences.toml with the email associated with your cloudflare account")
 		pass = false
-		fmt.Println("Email field is required. Do not leave blank!")
 	}
 	if cloud.Namespace == "" {
 		pass = false
-		fmt.Println("Namespace field is required. Do not leave blank!")
+		log.Fatalf("Namespace information is empty. Please edit your preferences.toml with valid info")
 	}
 	if cloud.Account == "" {
 		pass = false
-		fmt.Println("Account field is required. Do not leave blank!")
+		log.Fatalf("Account information is empty. Please edit your preferences.toml with valid info")
 	}
 	if cloud.Key == "" || cloud.Token == "" {
 		pass = false
-		fmt.Println("Must have a valid Key or Token. Do not leave blank!")
+		log.Fatalf("Key and Token are empty. Please edit your preferences.toml with a valid key or token. It is best practice to access your account through a least priviledged token.")
 	}
 	//check the length of data
 
