@@ -60,11 +60,12 @@ func GetKVkeys(cf *Account) {
 		log.Fatalln(err)
 	}
 
-	//set the content type -- to verify
+	//set the content type
 	req.Header.Set("Content-Type", "application/json")
 
 	//for write/read
 
+	//use token if available, try global key next
 	if cf.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+cf.Token)
 	} else if cf.Key != "" {
@@ -98,16 +99,15 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 
 	client := &http.Client{}
 
+	// Prepare a form that you will submit to that URL.
 	var fileUpload bytes.Buffer
 
 	hash := meta.Hash
 
-	// Prepare a form that you will submit to that URL.
-	//	var b bytes.Buffer
-
 	//get a multipart writer
 	w := multipart.NewWriter(&fileUpload)
 
+	//create the name="value" part of the upload
 	formWriter, err := w.CreateFormFile("value", filename)
 	if err != nil {
 		log.Fatalln(err)
@@ -115,9 +115,15 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 
 	//open a pipe
 	pr, pw := io.Pipe()
-	//		errCh := make(chan error, 1)
-	//		go zipInit(filename, pr, pw, errCh)
-	go zStandardInit(filename, pw)
+
+	if cf.Zip == "zstandard" {
+		go zStandardInit(filename, pw)
+	} else if cf.Zip == "zip" {
+		errCh := make(chan error, 1)
+		go zipInit(filename, pr, pw, errCh)
+	} else { //no compression
+		go copyFile(filename, pr, pw)
+	}
 
 	//copy up to 24MB using the pipereader
 	written, err := io.CopyN(formWriter, pr, 24*1024*1024)
@@ -209,11 +215,7 @@ func UploadKV(cf *Account, meta Metadata) bool {
 	client := &http.Client{}
 
 	var fileUpload bytes.Buffer
-	//	var written int64
-
-	//	written = 0 //bytes written to fileUpload
 	hash := meta.Hash
-	//	metadata := fmt.Sprintf("%v:%v:%v", meta.FileName, meta.Filepath, meta.FileNum)
 
 	/*	fmt.Fprintf(&fileUpload, "size: %d", 85)
 		written += 1
@@ -270,27 +272,6 @@ func UploadKV(cf *Account, meta Metadata) bool {
 		//decrement waitgroup
 		wg.Done()
 	}
-
-	//copy from file to the writer
-	//		zipFile, _ := os.Create("file.zip")
-	// Do stuff with pr here.
-	//		_, _ = io.Copy(zipFile, pr)
-	//create the zip file
-	//		zipFile.Close()
-	//file.Close()
-	//	var exitCode int
-	//	exitCode = 5
-
-	//file, err := os.Open(filename)
-	//if err != nil {
-	//	log.Fatalln(err)
-	//}
-
-	//request with Metadata
-	//	      PUT accounts/:account_identifier/storage/kv/namespaces/:namespace_identifier/values/:key_name?expiration=:expiration&expiration_ttl=:expiration_ttl
-	//bulk request
-	//	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/bulk"
-	//request accounts/:account_identifier/storage/kv/namespaces/:namespace_identifier/values/:key_name
 
 	//normal
 	// 5/10/21	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + hash

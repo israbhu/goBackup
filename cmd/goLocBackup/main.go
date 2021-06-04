@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -11,15 +12,25 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/pelletier/go-toml"
-
 	"github.com/israbhu/goBackup/internal/pkg/gobackup"
+	"github.com/pelletier/go-toml"
 )
 
 //***************global variables*************
 var cf gobackup.Account //account credentials and preferences
 var dat gobackup.Data1  //local datastore tracking uploads and Metadata
 var verbose bool        //flag for extra info output to console
+
+//checks the errors********
+func CheckError(err error, message string) {
+	if err != nil {
+		if message == "" {
+			log.Fatalf("Error found! %v", err)
+		} else {
+			log.Fatalf(message+" %v", err)
+		}
+	}
+}
 
 //backs up the list of files
 //uploading the data should be the most time consuming portion of the program, so it will pushed into a go routine
@@ -30,16 +41,27 @@ func backup() {
 	}
 }
 
+func validatePreferences() {
+	//account, namespace, email, key, token, location
+	if cf.Account == "" {
+		log.Fatalf("Account information is empty. Please edit your preferences.toml with valid info")
+	} else if cf.Namespace == "" {
+		log.Fatalf("Namespace information is empty. Please edit your preferences.toml with valid info")
+	} else if cf.Email == "" {
+		log.Fatalf("Email information is empty. Please edit your preferences.toml with the email associated with your cloudflare account")
+	} else if cf.Key == "" && cf.Token == "" {
+		log.Fatalf("Key and Token are empty. Please edit your preferences.toml with a valid key or token. It is best practice to access your account through a least priviledged token.")
+	}
+
+}
+
 //read from a toml file
 //check that the file exists since the function can be called from a commandline argument
 func readTOML(file string) {
 	dat, err := ioutil.ReadFile(file)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	astring := string(dat)
+	CheckError(err, "")
 
-	fmt.Println("File as string: " + astring)
+	astring := string(dat)
 
 	doc2 := []byte(astring)
 
@@ -54,11 +76,6 @@ func readTOML(file string) {
 	} else {
 		toml.Unmarshal(doc2, &cf)
 
-		fmt.Printf("Unmarshalling the preferences file:%v\n", file)
-		fmt.Println("Contents of file:")
-		fmt.Println(cf)
-		fmt.Println("Contents of file end")
-
 		//verbose flag
 		if verbose {
 			fmt.Println("Reading in the preference file:" + file)
@@ -69,13 +86,22 @@ func readTOML(file string) {
 }
 
 //write a toml file
-func writeTOML() {
-}
-
-func check(e error) {
-	if e != nil {
-		panic(e)
+func writeTOML(file string) {
+	//get []byte from type cf
+	data, err := toml.Marshal(&cf)
+	if err != nil {
+		log.Fatalf("writeTOML has encountered an error: %v", err)
 	}
+
+	//open file to write
+	writeFile, err := os.Open(file)
+	if err != nil {
+		log.Fatalf("writeTOML has encountered an error: %v", err)
+	}
+
+	//write to file
+	io.WriteString(writeFile, string(data))
+
 }
 
 //check if a file called name exists
@@ -90,9 +116,7 @@ func checkFileExist(name string) bool {
 //gets the size of a file called name
 func getFileSize(name string) int64 {
 	fi, err := os.Stat(name)
-	if err != nil {
-		panic(err)
-	}
+	CheckError(err, "")
 	// return the size in bytes
 	return fi.Size()
 }
@@ -104,7 +128,7 @@ func createEmptyFile(name string) {
 	}
 
 	d := []byte("")
-	check(ioutil.WriteFile(name, d, 0644))
+	CheckError(ioutil.WriteFile(name, d, 0644), "")
 }
 
 //make a new directory called name
@@ -114,7 +138,7 @@ func mkdir(name string) {
 	} else {
 		fmt.Print("not exists")
 		err := os.Mkdir(name, 0755)
-		check(err)
+		CheckError(err, "")
 	}
 }
 
@@ -133,7 +157,7 @@ func getFiles(name string, f []string) []string {
 	if checkFileExist(name) {
 
 		stat, err := os.Stat(name)
-		check(err)
+		CheckError(err, "")
 
 		//if it's a regular file, append and return f
 		if stat.Mode().IsRegular() {
@@ -144,23 +168,18 @@ func getFiles(name string, f []string) []string {
 
 	fmt.Printf("getFiles name=**%v**\n", name)
 	err := filepath.Walk(name, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
+		CheckError(err, "")
 		//remove .
 		if path != "." && !info.IsDir() {
 			f = append(f, path)
 		}
 		return nil
 	})
-	if err != nil {
-		//    	log.Println(err)
-		panic(err)
-	}
+	CheckError(err, "")
 	return f
 }
 
+//process the command line commands
 //yes, email, Account, Data, Email, Namespace, Key, Token, Location string
 //backup strategy, zip, encrypt, verbose, sync, list data, alt pref, no pref
 func extractCommandLine() {
@@ -178,8 +197,10 @@ func extractCommandLine() {
 	var altPrefFlag = flag.String("pref", "", "use an alternate preference file")
 
 	flag.Parse()
+	fmt.Println("Checking flags!")
 
 	if *altPrefFlag != "" {
+		fmt.Println("Alernate Preferences file detected, checking:")
 		readTOML(*altPrefFlag)
 		if !gobackup.ValidateCF(&cf) {
 			fmt.Printf("%v has errors that need to be fixed!", *altPrefFlag)
@@ -216,7 +237,7 @@ func extractCommandLine() {
 	}
 	if *verboseFlag {
 		verbose = true
-		fmt.Println("Extracting flags from commandline:")
+		fmt.Println("Verbose information is true, opening the flood gates!")
 	}
 	if *downloadFlag != "" {
 		cf.Location = *downloadFlag //hash
@@ -224,7 +245,6 @@ func extractCommandLine() {
 		fmt.Println("Downloaded a file!")
 		os.Exit(0)
 	}
-
 }
 
 //search the data file for hash, line by line
@@ -233,9 +253,7 @@ func extractCommandLine() {
 func searchData(hash string, fileName string) bool {
 
 	file, err := os.Open("data.dat")
-	if err != nil {
-		log.Fatalf("searchData failed opening file:data.dat")
-	}
+	CheckError(err, "searchData failed opening file:data.dat")
 	scan := bufio.NewScanner(file)
 	scan.Split(bufio.ScanLines)
 	for scan.Scan() {
@@ -252,21 +270,20 @@ func searchData(hash string, fileName string) bool {
 	return false
 }
 
+/*
 //create a toml file from a struct
+?? redundant, same as writeTOML
 func dataFile() {
 	doc, _ := toml.Marshal(&dat)
 
 	fmt.Println(string(doc))
 	fmt.Println(dat)
 	err := ioutil.WriteFile("data.dat", doc, 0644)
-	if err != nil {
-		log.Fatalln(err)
-	}
+	CheckError(err, "")
 	_, err = os.Lstat("data.dat")
-	if err != nil {
-		log.Fatalln(err)
-	}
+	CheckError(err, "")
 }
+*/
 
 //******* This struct contains the data needed to access the cloudflare infrastructure. It is stored on drive in the file preferences.toml *****
 type Account struct {
@@ -277,31 +294,30 @@ type Account struct {
 	Token, // Token is used instead of the key and created on cloudflare at https://dash.cloudflare.com/profile/api-tokens
 	Email, // email is the email associated with your cloudflare account
 	Data,
-	Location,
-	Zip,
+	Location, //locations of the comma deliminated file and folders to be backed up
+	Zip, //string to determine zip type. Currently none, zstandard, and zip
 	Backup string
 }
 
-// extract toml data for account and behaviour information
-// extract out the files for backup
-// backup the data
 func main() {
-
-	fmt.Println(gobackup.GetMetadata(gobackup.Metadata{}))
-	readTOML("preferences.toml")
-	fmt.Println(cf)
-	fmt.Println("****************************")
-
-	//	fmt.Println("zipping a file")
-	//	gobackup.ZipFile("zipsuite.txt", "zipsuite.zip")
-	//get the command arguments
 	//command line can overwrite the data from the preferences file
 	extractCommandLine()
 
-	//get the filelist for backup
+	//if no alternate prefences were in the command line, extract the default
+	if cf.Token == "" {
+		readTOML("preferences.toml")
+	}
+
+	//make sure the preferences are valid
+	validatePreferences()
+	gobackup.ValidateCF(&cf)
+
+	//the filelist for backup
 	var fileList []string
 
-	fmt.Printf("CF LOCATION:%v", cf.Location)
+	if verbose {
+		fmt.Printf("CF LOCATION:%v", cf.Location)
+	}
 
 	backupLocations := strings.Split(cf.Location, ",")
 
@@ -336,15 +352,19 @@ func main() {
 	fmt.Println("Getting the keys and metadata!")
 	gobackup.GetKVkeys(&cf)
 
+	//TheMetadata is empty, then there is no work left to be done. Exit program
 	if len(dat.TheMetadata) == 0 {
 		fmt.Println("All files are up to date! Exiting!")
 		os.Exit(0)
 	}
 
+	//information for user
 	fmt.Printf("Original File: %s, Data Size: %v, Data Count: %v", dat.TheMetadata[0].FileName, dat.DataSize, dat.Count)
+
 	//split the work and backup
 	backup()
 
+	//download the data
 	fmt.Println(gobackup.DownloadKV(&cf, dat.TheMetadata[0].Hash, "test.txt"))
 
 	//update the local data file

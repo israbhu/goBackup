@@ -96,21 +96,26 @@ func zStandardInit(filename string, pw *io.PipeWriter) {
 
 }
 
+//no compression
+func copyFile(filename string, pr *io.PipeReader, pw *io.PipeWriter) {
+	defer pw.Close()
+	//open the file to be zipped
+	file, err := os.Create(filename)
+	if err != nil {
+		fmt.Printf("Error in copyFile: %v", err)
+	}
+	defer file.Close()
+
+	written, err := io.Copy(pw, file)
+	if err != nil {
+		fmt.Printf("io.Copy error:%v", err)
+	}
+	fmt.Printf("Successfully written:%v", written)
+
+}
+
 //decompress a zstandard compressed file
 func zStandardDecompress(filename string, pr *io.PipeReader, pw *io.PipeWriter) {
-
-	/*
-		    d, err := zstd.NewReader(in)
-		    if err != nil {
-		        return err
-		    }
-		    defer d.Close()
-
-		    // Copy content...
-		    _, err = io.Copy(out, d)
-		    return err
-		36
-	*/
 	defer pw.Close()
 	//open the file to be zipped
 	file, err := os.Create(filename)
@@ -129,8 +134,6 @@ func zStandardDecompress(filename string, pr *io.PipeReader, pw *io.PipeWriter) 
 		dec.Close()
 	}
 	fmt.Printf("Successfully written:%v", written)
-	//	return enc.Close()6*
-
 }
 
 //create a zip using pipes
@@ -186,28 +189,3 @@ func zipInit(filename string, pr *io.PipeReader, pw *io.PipeWriter, errCh chan e
 	}
 	fmt.Printf("Wrote %d Bytes\n", n)
 }
-
-/*
-func main() {
-	//open a pipe
-	pr, pw := io.Pipe()
-	errCh := make(chan error, 1)
-	go zipInit(pr, pw, errCh)
-
-	//copy from file to the writer
-	zipFile, _ := os.Create("file.zip")
-	// Do stuff with pr here.
-	_, _ = io.Copy(zipFile, pr)
-	//create the zip file
-	zipFile.Close()
-	//file.Close()
-	var exitCode int
-
-	if err, ok := <-errCh; ok {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		exitCode = 1
-	}
-
-	os.Exit(exitCode)
-}
-*/
