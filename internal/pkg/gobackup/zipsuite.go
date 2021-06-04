@@ -100,7 +100,7 @@ func zStandardInit(filename string, pw *io.PipeWriter) {
 func copyFile(filename string, pr *io.PipeReader, pw *io.PipeWriter) {
 	defer pw.Close()
 	//open the file to be zipped
-	file, err := os.Create(filename)
+	file, err := os.Open(filename)
 	if err != nil {
 		fmt.Printf("Error in copyFile: %v", err)
 	}

@@ -117,11 +117,20 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 	pr, pw := io.Pipe()
 
 	if cf.Zip == "zstandard" {
+		fmt.Println("*************")
+		fmt.Println("zstandard")
+		fmt.Println("*************")
 		go zStandardInit(filename, pw)
 	} else if cf.Zip == "zip" {
+		fmt.Println("*************")
+		fmt.Println("zip")
+		fmt.Println("*************")
 		errCh := make(chan error, 1)
 		go zipInit(filename, pr, pw, errCh)
 	} else { //no compression
+		fmt.Println("*************")
+		fmt.Println("no compression")
+		fmt.Println("*************")
 		go copyFile(filename, pr, pw)
 	}
 

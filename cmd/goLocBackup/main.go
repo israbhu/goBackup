@@ -330,6 +330,10 @@ func main() {
 	//fill in the Metadata
 	for _, f := range fileList {
 		hash := gobackup.Md5file(f)
+		openFile, _ := os.Open(f)
+		contents, _ := ioutil.ReadAll(openFile)
+
+		fmt.Printf("For Loop: (f:%v)(hash:%v)(contents:%v)", f, hash, string(contents))
 
 		//if not found
 		if !searchData(hash, f) {
