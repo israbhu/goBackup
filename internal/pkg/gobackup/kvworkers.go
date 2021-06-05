@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -22,20 +21,20 @@ func ValidateCF(cloud *Account) bool {
 
 	//check the required fields are not blank
 	if cloud.Email == "" {
-		log.Fatalf("Email information is empty. Please edit your preferences.toml with the email associated with your cloudflare account")
+		Logger.Fatalf("Email information is empty. Please edit your preferences.toml with the email associated with your cloudflare account")
 		pass = false
 	}
 	if cloud.Namespace == "" {
 		pass = false
-		log.Fatalf("Namespace information is empty. Please edit your preferences.toml with valid info")
+		Logger.Fatalf("Namespace information is empty. Please edit your preferences.toml with valid info")
 	}
 	if cloud.Account == "" {
 		pass = false
-		log.Fatalf("Account information is empty. Please edit your preferences.toml with valid info")
+		Logger.Fatalf("Account information is empty. Please edit your preferences.toml with valid info")
 	}
 	if cloud.Key == "" || cloud.Token == "" {
 		pass = false
-		log.Fatalf("Key and Token are empty. Please edit your preferences.toml with a valid key or token. It is best practice to access your account through a least priviledged token.")
+		Logger.Fatalf("Key and Token are empty. Please edit your preferences.toml with a valid key or token. It is best practice to access your account through a least priviledged token.")
 	}
 	//check the length of data
 
@@ -57,7 +56,7 @@ func GetKVkeys(cf *Account) {
 	//get request to get the key data
 	req, err := http.NewRequest("GET", request, &requestBody)
 	if err != nil {
-		log.Fatalln(err)
+		Logger.Fatalln(err)
 	}
 
 	//set the content type
@@ -76,7 +75,7 @@ func GetKVkeys(cf *Account) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatalln(err)
+		Logger.Fatalln(err)
 	}
 
 	fmt.Println(resp)
@@ -84,7 +83,7 @@ func GetKVkeys(cf *Account) {
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatalln(err)
+		Logger.Fatalln(err)
 	}
 
 	fmt.Println(string(body))
@@ -110,7 +109,7 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 	//create the name="value" part of the upload
 	formWriter, err := w.CreateFormFile("value", filename)
 	if err != nil {
-		log.Fatalln(err)
+		Logger.Fatalln(err)
 	}
 
 	//open a pipe
@@ -138,17 +137,17 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 	written, err := io.CopyN(formWriter, pr, 24*1024*1024)
 	if err != nil && err != io.EOF {
 		fmt.Printf("Err != nil, Bytes written:%v", written)
-		log.Fatalln(err)
+		Logger.Fatalln(err)
 	}
 
 	formWriter, err = w.CreateFormField("metadata")
 	if err != nil {
-		log.Fatalln(err)
+		Logger.Fatalln(err)
 	}
 
 	jsonBytes, err := json.Marshal(meta)
 	if err != nil {
-		log.Fatalf("Could not marshal metadata %+v: %v", meta, err)
+		Logger.Fatalf("Could not marshal metadata %+v: %v", meta, err)
 	}
 	formWriter.Write(jsonBytes) //send metadata
 
@@ -163,7 +162,7 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 	//put request to upload the data
 	req, err := http.NewRequest(http.MethodPut, request, &fileUpload)
 	if err != nil {
-		log.Fatalln(err)
+		Logger.Fatalln(err)
 	}
 
 	// Don't forget to set the content type, this will contain the boundary.
@@ -177,10 +176,10 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 
 	req.Header.Set("X-Auth-Email", cf.Email)
 
-	fmt.Printf("Request to be sent: %+q\n", req)
+	fmt.Printf("Request to be sent: %q\n", fmt.Sprintf("%+v", req))
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatalln(err)
+		Logger.Fatalln(err)
 	}
 
 	fmt.Println(resp)
@@ -190,7 +189,7 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatalln(err)
+		Logger.Fatalln(err)
 	}
 	json.Unmarshal(body, &response)
 
@@ -199,7 +198,7 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 		fmt.Println(string(body))
 		fmt.Println("***End Body of response***")
 		fmt.Println("File was not uploaded, exiting")
-		log.Fatalln("No upload!")
+		Logger.Fatalln("No upload!")
 	} else {
 		fmt.Printf("Successfully uploaded %v\n", filename)
 	}
@@ -242,7 +241,7 @@ func UploadKV(cf *Account, meta Metadata) bool {
 		//copy up to 24MB using the pipereader
 		written, err := io.CopyN(&fileUpload, pr, 24*1024*1024)
 		if err != nil && err != io.EOF {
-			log.Fatalf("Bytes written: %d, err: %v\n", written, err)
+			Logger.Fatalf("Bytes written: %d, err: %v\n", written, err)
 		}
 
 		//if written is exactly at the maximum N, then we haven't finished using the data in the pipe
@@ -264,7 +263,7 @@ func UploadKV(cf *Account, meta Metadata) bool {
 		//copy up to 24MB using the pipereader
 		written, err := io.CopyN(&fileUpload, meta.pr, 24*1024*1024)
 		if err != nil {
-			log.Fatalln(err)
+			Logger.Fatalln(err)
 		}
 
 		//if written is exactly at the maximum N, then we haven't finished using the data in the pipe
@@ -290,7 +289,7 @@ func UploadKV(cf *Account, meta Metadata) bool {
 	//put request to upload the data
 	req, err := http.NewRequest(http.MethodPut, request, &fileUpload)
 	if err != nil {
-		log.Fatalln(err)
+		Logger.Fatalln(err)
 	}
 
 	//set the content type -- to verify
@@ -308,7 +307,7 @@ func UploadKV(cf *Account, meta Metadata) bool {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatalln(err)
+		Logger.Fatalln(err)
 	}
 
 	fmt.Println(resp)
@@ -316,7 +315,7 @@ func UploadKV(cf *Account, meta Metadata) bool {
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatalln(err)
+		Logger.Fatalln(err)
 	}
 	fmt.Println(string(body))
 	fmt.Println("Done with uploadKV")
@@ -337,7 +336,7 @@ func DownloadKV(cf *Account, dataKey string, filepath string) string {
 
 	req, err := http.NewRequest("GET", request, nil)
 	if err != nil {
-		log.Fatalln(err)
+		Logger.Fatalln(err)
 	}
 
 	fmt.Println("REQUEST:" + request)
@@ -356,7 +355,7 @@ func DownloadKV(cf *Account, dataKey string, filepath string) string {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatalln(err)
+		Logger.Fatalln(err)
 	}
 
 	fmt.Println(resp)

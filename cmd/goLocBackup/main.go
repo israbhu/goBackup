@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,9 +24,9 @@ var verbose bool        //flag for extra info output to console
 func CheckError(err error, message string) {
 	if err != nil {
 		if message == "" {
-			log.Fatalf("Error found! %v", err)
+			gobackup.Logger.Fatalf("Error found! %v", err)
 		} else {
-			log.Fatalf(message+" %v", err)
+			gobackup.Logger.Fatalf(message+" %v", err)
 		}
 	}
 }
@@ -44,13 +43,13 @@ func backup() {
 func validatePreferences() {
 	//account, namespace, email, key, token, location
 	if cf.Account == "" {
-		log.Fatalf("Account information is empty. Please edit your preferences.toml with valid info")
+		gobackup.Logger.Fatalf("Account information is empty. Please edit your preferences.toml with valid info")
 	} else if cf.Namespace == "" {
-		log.Fatalf("Namespace information is empty. Please edit your preferences.toml with valid info")
+		gobackup.Logger.Fatalf("Namespace information is empty. Please edit your preferences.toml with valid info")
 	} else if cf.Email == "" {
-		log.Fatalf("Email information is empty. Please edit your preferences.toml with the email associated with your cloudflare account")
+		gobackup.Logger.Fatalf("Email information is empty. Please edit your preferences.toml with the email associated with your cloudflare account")
 	} else if cf.Key == "" && cf.Token == "" {
-		log.Fatalf("Key and Token are empty. Please edit your preferences.toml with a valid key or token. It is best practice to access your account through a least priviledged token.")
+		gobackup.Logger.Fatalf("Key and Token are empty. Please edit your preferences.toml with a valid key or token. It is best practice to access your account through a least priviledged token.")
 	}
 
 }
@@ -90,13 +89,13 @@ func writeTOML(file string) {
 	//get []byte from type cf
 	data, err := toml.Marshal(&cf)
 	if err != nil {
-		log.Fatalf("writeTOML has encountered an error: %v", err)
+		gobackup.Logger.Fatalf("writeTOML has encountered an error: %v", err)
 	}
 
 	//open file to write
 	writeFile, err := os.Open(file)
 	if err != nil {
-		log.Fatalf("writeTOML has encountered an error: %v", err)
+		gobackup.Logger.Fatalf("writeTOML has encountered an error: %v", err)
 	}
 
 	//write to file

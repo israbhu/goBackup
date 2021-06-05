@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"strings"
 	"time"
@@ -33,7 +32,7 @@ func md5string(a string) string {
 func Md5file(in string) string {
 	dat, err := ioutil.ReadFile(in)
 	if err != nil {
-		log.Fatalf("md5 failed")
+		Logger.Fatalf("md5 failed")
 	}
 	data := md5.Sum(dat)
 	return hashToString(data[:])
@@ -71,13 +70,13 @@ func BuildData(a *Data1) string {
 
 		file, err := os.Open(string(d.FileName))
 		if err != nil {
-			log.Fatalf("searchData failed opening file:" + string(d.FileName))
+			Logger.Fatalf("searchData failed opening file:" + string(d.FileName))
 		}
 		defer file.Close()
 
 		body, err := ioutil.ReadAll(file)
 		if err != nil {
-			log.Fatalln(err)
+			Logger.Fatalln(err)
 		}
 
 		sb.WriteString("{\"key\":\"")
@@ -98,13 +97,13 @@ func BuildData(a *Data1) string {
 
 	file, err := os.Open(string(d.FileName))
 	if err != nil {
-		log.Fatalf("searchData failed opening file:" + string(d.FileName))
+		Logger.Fatalf("searchData failed opening file:" + string(d.FileName))
 	}
 	defer file.Close()
 
 	body, err := ioutil.ReadAll(file)
 	if err != nil {
-		log.Fatalln(err)
+		Logger.Fatalln(err)
 	}
 
 	sb.WriteString("{\"key\":\"")
@@ -134,7 +133,7 @@ func DataFile2(file string, dat *Data1) {
 
 	theFile, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE, 0644)
 	if err != nil {
-		log.Fatalf("problem opening file '%s': %v", file, err)
+		Logger.Fatalf("problem opening file '%s': %v", file, err)
 	}
 
 	defer theFile.Close()
@@ -152,7 +151,7 @@ func DataFile2(file string, dat *Data1) {
 func CreateMeta(file string) Metadata {
 	fi, err := os.Lstat(file)
 	if err != nil {
-		log.Fatalln(err)
+		Logger.Fatalln(err)
 	}
 
 	var temp Metadata
