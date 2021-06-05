@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"time"
 
@@ -47,7 +46,7 @@ func filePermissions(filename string, filemode uint32) {
 
 	err := os.Chmod(filename, os.FileMode(filemode))
 	if err != nil {
-		log.Println(err)
+		Logger.Println(err)
 	}
 }
 
@@ -55,7 +54,7 @@ func fileOwner(filename string) {
 	// Change file ownership.
 	err := os.Chown(filename, os.Getuid(), os.Getgid())
 	if err != nil {
-		log.Println(err)
+		Logger.Println(err)
 	}
 }
 func fileAccess(filename string, lastAccess time.Time, lastModify time.Time) {
@@ -65,7 +64,7 @@ func fileAccess(filename string, lastAccess time.Time, lastModify time.Time) {
 	//		lastModifyTime := addOneDayFromNow
 	err := os.Chtimes(filename, lastAccess, lastModify)
 	if err != nil {
-		log.Println(err)
+		Logger.Println(err)
 	}
 }
 
