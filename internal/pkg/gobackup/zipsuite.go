@@ -90,7 +90,7 @@ func zStandardInit(filename string, pw *io.PipeWriter) {
 		fmt.Printf("io.Copy error:%v", err)
 		enc.Close()
 	}
-	fmt.Printf("Successfully encoded bytes: %d\n", written)
+	fmt.Printf("Successfully encoded bytes: %d  ", written)
 	//	return enc.Close()
 
 }
@@ -109,7 +109,7 @@ func copyFile(filename string, pr *io.PipeReader, pw *io.PipeWriter) {
 	if err != nil {
 		fmt.Printf("io.Copy error:%v", err)
 	}
-	fmt.Printf("Successfully written:%v", written)
+	fmt.Printf("Successfully written:%v  ", written)
 
 }
 
@@ -132,7 +132,7 @@ func zStandardDecompress(filename string, pr *io.PipeReader, pw *io.PipeWriter) 
 		fmt.Printf("io.Copy error:%v", err)
 		dec.Close()
 	}
-	fmt.Printf("Successfully written:%v", written)
+	fmt.Printf("Successfully written:%v  ", written)
 }
 
 //create a zip using pipes

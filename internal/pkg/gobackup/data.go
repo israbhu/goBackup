@@ -130,18 +130,28 @@ func BuildData(a *Data1) string {
 
 //create a data file from data struct
 func DataFile2(file string, dat *Data1) {
+	var theFile io.ReadWriter
+	var err error
 
-	theFile, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE, 0644)
-	if err != nil {
-		Logger.Fatalf("problem opening file '%s': %v", file, err)
+	if file == "" { //dryRun
+		fmt.Println("Dry run, setting output to standard out!")
+		theFile = os.Stdout
+	} else {
+		fmt.Println("Opening the data.dat file!")
+		theFile, err = os.OpenFile(file, os.O_APPEND|os.O_CREATE, 0644)
+		if err != nil {
+			Logger.Fatalf("problem opening file '%s': %v", file, err)
+		}
 	}
-
-	defer theFile.Close()
+	//	defer theFile.Close()
 
 	datawriter := bufio.NewWriter(theFile)
 	for i, data := range dat.TheMetadata {
 		//added a spacer between the hash and filename
-		_, _ = datawriter.WriteString(dat.TheMetadata[i].Hash + ":" + GetMetadata(data) + "\n")
+		_, err := datawriter.WriteString(dat.TheMetadata[i].Hash + ":" + GetMetadata(data) + "\n")
+		CheckError(err, "Error in Datafile2!")
+
+		fmt.Printf("Adding item:%v and data:%v\n", i, data)
 	}
 	datawriter.Flush()
 
@@ -210,13 +220,13 @@ type Metadata struct {
 	//Metadata filename:
 	//FileNum is the current file number (starting from 0) in a file that has been split
 	//Metadata example test.txt:f2o4:ph#:fh#:
-	File        string
-	Notes       string
-	Permissions string
-	Filepath    string `json:"filepath"`
-	Hash        string
-	FileNum     int `json:"file_num"`
-	FileName    string
+	File        string    `json:"File"`
+	Notes       string    `json:"notes"`
+	Permissions string    `json:"permissions"`
+	Filepath    string    `json:"filepath"`
+	Hash        string    `json:"hash"`
+	FileNum     int       `json:"file_num"`
+	FileName    string    `json:"filename"`
 	Mtime       time.Time `json:"mtime"`
 	Size        int64
 	pr          *io.PipeReader

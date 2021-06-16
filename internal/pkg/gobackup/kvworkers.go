@@ -13,12 +13,16 @@ import (
 )
 
 var wg sync.WaitGroup
+var DryRun = false
 
 //validate that the preferences file has all the correct fields
 func ValidateCF(cloud *Account) bool {
 	//	Account, Data, Email, Namespace, Key, Token, Location, Zip, Backup string
 	pass := true
 
+	if DryRun {
+		return true
+	}
 	//check the required fields are not blank
 	if cloud.Email == "" {
 		Logger.Fatalf("Email information is empty. Please edit your preferences.toml with the email associated with your cloudflare account")
@@ -42,7 +46,7 @@ func ValidateCF(cloud *Account) bool {
 }
 
 //get the stored keys on the account
-func GetKVkeys(cf *Account) {
+func GetKVkeys(cf *Account) []byte {
 	client := &http.Client{}
 
 	//buffer to store our request body as bytes
@@ -53,6 +57,7 @@ func GetKVkeys(cf *Account) {
 	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/keys"
 
 	fmt.Println("GET KEY REQUEST:" + request)
+
 	//get request to get the key data
 	req, err := http.NewRequest("GET", request, &requestBody)
 	if err != nil {
@@ -73,20 +78,35 @@ func GetKVkeys(cf *Account) {
 
 	req.Header.Set("X-Auth-Email", cf.Email)
 
+	if DryRun {
+		return []byte("dry run")
+	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		Logger.Fatalln(err)
 	}
 
-	fmt.Println(resp)
+	//debug information
+	if Debug {
+		fmt.Print("Printing Response Header info: \n")
+		fmt.Println(resp)
+	}
 
 	defer resp.Body.Close()
+
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		Logger.Fatalln(err)
 	}
 
-	fmt.Println(string(body))
+	//verbose information showing the "response" json data
+	//name and metadata fields
+	if Verbose {
+		fmt.Println("Response Body: \n" + string(body))
+	}
+
+	return body
 }
 
 //func UploadMultiPart(client *http.Client, url string, values map[string]io.Reader, filename string) (err error) {
@@ -116,9 +136,11 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 	pr, pw := io.Pipe()
 
 	if cf.Zip == "zstandard" {
-		fmt.Println("*************")
-		fmt.Println("zstandard")
-		fmt.Println("*************")
+		if Verbose {
+			fmt.Println("*************")
+			fmt.Println("zstandard")
+			fmt.Println("*************")
+		}
 		go zStandardInit(filename, pw)
 	} else if cf.Zip == "zip" {
 		fmt.Println("*************")
@@ -140,6 +162,8 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 		Logger.Fatalln(err)
 	}
 
+	fmt.Printf("%v encoded %v bytes\n", cf.Zip, written)
+
 	formWriter, err = w.CreateFormField("metadata")
 	if err != nil {
 		Logger.Fatalln(err)
@@ -157,7 +181,11 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 
 	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + hash
 	//	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/valu
-
+	/*
+		if DryRun {
+			request = "127.0.0.1"
+		}
+	*/
 	fmt.Println("UPLOAD REQUEST:" + request)
 	//put request to upload the data
 	req, err := http.NewRequest(http.MethodPut, request, &fileUpload)
@@ -176,7 +204,13 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 
 	req.Header.Set("X-Auth-Email", cf.Email)
 
-	fmt.Printf("Request to be sent: %q\n", fmt.Sprintf("%+v", req))
+	if Debug {
+		fmt.Printf("Request to be sent: %q\n", fmt.Sprintf("%+v", req))
+	}
+
+	if DryRun {
+		return true
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		Logger.Fatalln(err)
@@ -184,7 +218,7 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 
 	fmt.Println(resp)
 
-	var response cloudflareResponse
+	var response CloudflareResponse
 
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
@@ -327,13 +361,17 @@ func UploadKV(cf *Account, meta Metadata) bool {
 }
 
 //implementation of the workers kv download
-func DownloadKV(cf *Account, dataKey string, filepath string) string {
+func DownloadKV(cf *Account, dataKey string, filepath string) bool {
 
 	client := &http.Client{}
 
 	//GET accounts/:account_identifier/storage/kv/namespaces/:namespace_identifier/values/:key_name
 	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + dataKey
-
+	/*
+		if DryRun {
+			request = "127.0.0.1"
+		}
+	*/
 	req, err := http.NewRequest("GET", request, nil)
 	if err != nil {
 		Logger.Fatalln(err)
@@ -353,6 +391,9 @@ func DownloadKV(cf *Account, dataKey string, filepath string) string {
 
 	req.Header.Set("X-Auth-Email", cf.Email)
 
+	if DryRun {
+		return true
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		Logger.Fatalln(err)
@@ -374,7 +415,8 @@ func DownloadKV(cf *Account, dataKey string, filepath string) string {
 		fmt.Println(err)
 	}
 
-	return ("Done Downloading!")
+	return true
+	//	return ("Done Downloading!")
 
 }
 
@@ -390,9 +432,14 @@ type Account struct {
 	Account, Data, Email, Namespace, Key, Token, Location, Zip, Backup string
 }
 
-type cloudflareResponse struct {
-	Result   string   `json:"result"`
+type CloudflareResponse struct {
+	Result   []MyData `json:"result"`
 	Success  bool     `json:"success"`
 	Errors   []string `json:"errors"`
 	Messages []string `json:"messages"`
+}
+
+type MyData struct {
+	Name        string   `json:"name"`
+	TheMetadata Metadata `json:"metadata"`
 }
