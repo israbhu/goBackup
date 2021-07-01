@@ -2,7 +2,6 @@ package gobackup
 
 import (
 	"archive/zip"
-	"fmt"
 	"io"
 	"os"
 	"time"
@@ -74,23 +73,23 @@ func zStandardInit(filename string, pw *io.PipeWriter) {
 
 	enc, err := zstd.NewWriter(pw)
 	if err != nil {
-		fmt.Printf("newWriter error:%v", err)
+		Logger.Printf("newWriter error:%v", err)
 	}
 	defer enc.Close()
 
 	//open the file to be zipped
 	file, err := os.Open(filename)
 	if err != nil {
-		fmt.Printf("Error in zStandardInit: %v", err)
+		Logger.Printf("Error in zStandardInit: %v", err)
 	}
 	defer file.Close()
 
 	written, err := io.Copy(enc, file)
 	if err != nil {
-		fmt.Printf("io.Copy error:%v", err)
+		Logger.Printf("io.Copy error:%v", err)
 		enc.Close()
 	}
-	fmt.Printf("Successfully encoded bytes: %d  ", written)
+	Logger.Printf("Successfully encoded bytes: %d  ", written)
 	//	return enc.Close()
 
 }
@@ -101,15 +100,15 @@ func copyFile(filename string, pr *io.PipeReader, pw *io.PipeWriter) {
 	//open the file to be zipped
 	file, err := os.Open(filename)
 	if err != nil {
-		fmt.Printf("Error in copyFile: %v", err)
+		Logger.Printf("Error in copyFile: %v", err)
 	}
 	defer file.Close()
 
 	written, err := io.Copy(pw, file)
 	if err != nil {
-		fmt.Printf("io.Copy error:%v", err)
+		Logger.Printf("io.Copy error:%v", err)
 	}
-	fmt.Printf("Successfully written:%v  ", written)
+	Logger.Printf("Successfully written:%v  ", written)
 
 }
 
@@ -119,20 +118,20 @@ func zStandardDecompress(filename string, pr *io.PipeReader, pw *io.PipeWriter) 
 	//open the file to be zipped
 	file, err := os.Create(filename)
 	if err != nil {
-		fmt.Printf("Error in zStandardDecompress: %v", err)
+		Logger.Printf("Error in zStandardDecompress: %v", err)
 	}
 	defer file.Close()
 
 	dec, err := zstd.NewReader(pr)
 	if err != nil {
-		fmt.Printf("newReader error:%v", err)
+		Logger.Printf("newReader error:%v", err)
 	}
 	written, err := io.Copy(pw, dec)
 	if err != nil {
-		fmt.Printf("io.Copy error:%v", err)
+		Logger.Printf("io.Copy error:%v", err)
 		dec.Close()
 	}
-	fmt.Printf("Successfully written:%v  ", written)
+	Logger.Printf("Successfully written:%v  ", written)
 }
 
 //create a zip using pipes
@@ -186,5 +185,5 @@ func zipInit(filename string, pr *io.PipeReader, pw *io.PipeWriter, errCh chan e
 		errCh <- err
 		return
 	}
-	fmt.Printf("Wrote %d Bytes\n", n)
+	Logger.Printf("Wrote %d Bytes\n", n)
 }

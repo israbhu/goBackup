@@ -15,23 +15,25 @@ var Debug bool = false
 func AddLock() {
 	//if exist
 	if FileExist("lock.pid") {
+
+		workingDirectory, _ := os.Getwd()
 		//add nuances here
-		Logger.Fatalf("Data.dat has been locked for access. Please properly close the other program. If you wish to delete the lock manually, delete the lock.pid file in the gobackup directory.")
+		Logger.Fatalf("Data.dat has been locked for access. Please properly close the other program. If you wish to delete the lock manually, delete the %v file in the gobackup directory.", workingDirectory+string(os.PathSeparator)+"lock.pid")
 	} else {
 		lockfile, err := os.Create("lock.pid")
 		CheckError(err, "There was an error creating lock.pid")
 
-		//write the process id into the file
-		io.WriteString(lockfile, fmt.Sprintf("%v", os.Getpid()))
+		defer lockfile.Close()
 
-		//close the file
-		lockfile.Close()
+		//write the process id into the file
+		_, err = io.WriteString(lockfile, fmt.Sprintf("%v", os.Getpid()))
+		CheckError(err, "Error writing the processid to the lock file!")
 	}
 }
 
 //creates a lock file for data.dat
 func DeleteLock() {
-	//if exist
+	Logger.Println("Attempting to delete lock!")
 	if FileExist("lock.pid") {
 		err := os.Remove("lock.pid")
 		CheckError(err, "Error deleting lock.pid")
@@ -41,21 +43,24 @@ func DeleteLock() {
 //check if a file called name exists
 func FileExist(name string) bool {
 	if _, err := os.Stat(name); os.IsNotExist(err) {
-		//		fmt.Println("file does not exist")
+		//		Logger.Fatalf("The file at %v does not exist", name)
 		return false
 	}
 	return true
 }
 
 //checks the errors and delete lock********
-func CheckError(err error, message string) {
+func CheckError(err error, message string) bool {
 	if err != nil {
 		if message == "" {
-			Logger.Fatalf("Error found! %v", err)
-			DeleteLock()
+			Logger.Printf("Error found! %v", err)
+			//			DeleteLock()
+			return false
 		} else {
-			Logger.Fatalf(message+" %v", err)
-			DeleteLock()
+			Logger.Printf(message+" %v", err)
+			//			DeleteLock()
+			return false
 		}
 	}
+	return true
 }

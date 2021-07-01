@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -30,49 +29,42 @@ func backup() {
 	}
 }
 
-/*
-func validatePreferences() {
-	//account, namespace, email, key, token, location
-	if cf.Account == "" {
-		gobackup.Logger.Fatalf("Account information is empty. Please edit your preferences.toml with valid info")
-	} else if cf.Namespace == "" {
-		gobackup.Logger.Fatalf("Namespace information is empty. Please edit your preferences.toml with valid info")
-	} else if cf.Email == "" {
-		gobackup.Logger.Fatalf("Email information is empty. Please edit your preferences.toml with the email associated with your cloudflare account")
-	} else if cf.Key == "" && cf.Token == "" {
-		gobackup.Logger.Fatalf("Key and Token are empty. Please edit your preferences.toml with a valid key or token. It is best practice to access your account through a least priviledged token.")
-	}
-
-}
-*/
-
 //read from a toml file
 //check that the file exists since the function can be called from a commandline argument
 func readTOML(file string) {
-	dat, err := ioutil.ReadFile(file)
-	gobackup.CheckError(err, "")
 
-	astring := string(dat)
+	if gobackup.FileExist(file) {
 
-	doc2 := []byte(astring)
+		gobackup.Logger.Printf("Reading in the toml file, %v", file)
+		dat, err := ioutil.ReadFile(file)
+		gobackup.CheckError(err, "")
 
-	if file == "data.dat" {
-		toml.Unmarshal(doc2, &dat)
-		//verbose flag
-		if Verbose {
-			fmt.Println("Reading in the data file:" + file)
-			fmt.Println(dat)
+		astring := string(dat)
+
+		doc2 := []byte(astring)
+
+		if file == "data.dat" {
+			toml.Unmarshal(doc2, &dat)
+			//verbose flag
+			if Verbose {
+				gobackup.Logger.Println("Reading in the data file:" + file)
+				gobackup.Logger.Println(dat)
+			}
+
+		} else {
+			toml.Unmarshal(doc2, &cf)
+
+			//verbose flag
+			if Verbose {
+				gobackup.Logger.Println("Reading in the preference file:" + file)
+				gobackup.Logger.Println(cf)
+			}
 		}
+	} else { //the file does not exist
+		workingDirectory, _ := os.Getwd()
 
-	} else {
-		toml.Unmarshal(doc2, &cf)
-
-		//verbose flag
-		if Verbose {
-			fmt.Println("Reading in the preference file:" + file)
-			fmt.Println(cf)
-		}
-	}
+		gobackup.Logger.Output(1, "The file, "+workingDirectory+string(os.PathSeparator)+file+" does not exist! We strongly recommend creating the file for higher efficiency.")
+	} //else
 
 }
 
@@ -118,7 +110,7 @@ func mkdir(name string) {
 	if gobackup.FileExist(name) {
 		return
 	} else {
-		fmt.Print("not exists")
+		gobackup.Logger.Print("not exists")
 		err := os.Mkdir(name, 0755)
 		gobackup.CheckError(err, "")
 	}
@@ -132,7 +124,7 @@ func mkdir(name string) {
 func getFiles(name string, f []string) []string {
 	//make sure name is valid
 	if name == "" {
-		fmt.Println("getFiles name is blank, getting files from local directory")
+		gobackup.Logger.Println("getFiles name is blank, getting files from local directory")
 		name = "."
 	}
 
@@ -148,18 +140,24 @@ func getFiles(name string, f []string) []string {
 		}
 	}
 
-	fmt.Printf("getFiles name=**%v**\n", name)
+	gobackup.Logger.Printf("getFiles name=**%v**\n", name)
 	//	fmt.Printf("my cf email is %v", cf.Email)
 	//	log.Fatalln("Stopping here for checkup")
 	err := filepath.Walk(name, func(path string, info os.FileInfo, err error) error {
-		gobackup.CheckError(err, "")
+		if !gobackup.CheckError(err, "") {
+			basedir, _ := os.Getwd()
+
+			gobackup.Logger.Fatalf("Cannot find %v. Closing the program!", basedir+string(os.PathSeparator)+path)
+		}
 		//remove .
 		if path != "." && !info.IsDir() {
 			f = append(f, path)
 		}
 		return nil
 	})
-	gobackup.CheckError(err, "")
+	if !gobackup.CheckError(err, "") {
+		gobackup.Logger.Fatalf("Error found: %v", err)
+	}
 	return f
 }
 
@@ -175,7 +173,7 @@ func extractCommandLine() {
 	var addLocationFlag = flag.String("addLocation", "", "Add these locations/files to backup in addition to those set in the preferences file")
 	var locationFlag = flag.String("location", "", "Use only these locations to backup")
 	//	var backupFlag = flag.String("backup", "", "Backup strategy")
-	var downloadFlag = flag.String("download", "", "Folder/files to download")
+	var downloadFlag = flag.String("download", "", "Download files. By default use the preferences location. Use -location and -addLocation to modify the files downloaded.")
 	var zipFlag = flag.String("zip", "", "Set the zip compression to 'none', 'zstandard', or 'zip'")
 	var verboseFlag = flag.Bool("v", false, "More information")
 	var altPrefFlag = flag.String("pref", "", "use an alternate preference file")
@@ -183,17 +181,17 @@ func extractCommandLine() {
 	var dryFlag = flag.Bool("dry", false, "Dry run. Goes through all the steps, but it makes no changes on disk or network")
 	var getKeysFlag = flag.Bool("keys", false, "Get the keys and metadata from cloudflare")
 	var debugFlag = flag.Bool("debug", false, "Debugging information is shown")
-	var synchFlag = flag.Bool("synch", false, "Download the keys and metadata from cloud and overwrite the local database")
+	var syncFlag = flag.Bool("sync", false, "Download the keys and metadata from cloud and overwrite the local database")
 	//	var forcePrefFlag = flag.String("f", "", "ignore the lock")
 
 	flag.Parse()
-	fmt.Println("Checking flags!")
+	gobackup.Logger.Println("Checking flags!")
 
 	if *altPrefFlag != "" {
-		fmt.Println("Alernate Preferences file detected, checking:")
+		gobackup.Logger.Println("Alernate Preferences file detected, checking:")
 		readTOML(*altPrefFlag)
 		if !gobackup.ValidateCF(&cf) {
-			fmt.Printf("%v has errors that need to be fixed!", *altPrefFlag)
+			gobackup.Logger.Printf("%v has errors that need to be fixed!", *altPrefFlag)
 		}
 	}
 
@@ -231,11 +229,11 @@ func extractCommandLine() {
 	if *verboseFlag {
 		Verbose = true
 		gobackup.Verbose = true
-		fmt.Println("Verbose information is true, opening the flood gates!")
+		gobackup.Logger.Println("Verbose information is true, opening the flood gates!")
 	}
 	if *dryRunFlag || *dryFlag {
 		gobackup.DryRun = true
-		fmt.Println("Dry Run is active! No changes will be made!")
+		gobackup.Logger.Println("Dry Run is active! No changes will be made!")
 	}
 	if *downloadFlag != "" {
 		cf.Location = *downloadFlag //hash
@@ -245,8 +243,12 @@ func extractCommandLine() {
 			gobackup.ValidateCF(&cf)
 		}
 
+		//**** NEEEDS WORK!!****
+		//download the data
+		gobackup.Logger.Println(gobackup.DownloadKV(&cf, dat.TheMetadata[0].Hash, "test.txt"))
+
 		gobackup.DownloadKV(&cf, *downloadFlag, "download.file")
-		fmt.Println("Downloaded a file!")
+		gobackup.Logger.Println("Downloaded a file!")
 		os.Exit(0)
 	}
 	if *getKeysFlag {
@@ -255,48 +257,48 @@ func extractCommandLine() {
 			gobackup.ValidateCF(&cf)
 		}
 		//get keys
-		fmt.Println("Getting the keys and metadata!")
-		gobackup.GetKVkeys(&cf)
+		gobackup.Logger.Println("Getting the keys and metadata!")
+		gobackup.Logger.Println(string(gobackup.GetKVkeys(&cf)))
 		os.Exit(0)
 	}
 
-	if *synchFlag {
+	if *syncFlag {
 		if !gobackup.DryRun {
 			//check account
 			gobackup.ValidateCF(&cf)
 		}
 		//get keys
-		fmt.Println("Getting the keys and metadata!")
+		gobackup.Logger.Println("Getting the keys and metadata!")
 		jsonKeys := gobackup.GetKVkeys(&cf)
-		fmt.Printf("jsonKeys:%s", jsonKeys)
+		gobackup.Logger.Printf("jsonKeys:%s", jsonKeys)
 
 		var extractedData gobackup.CloudflareResponse
 
 		json.Unmarshal(jsonKeys, &extractedData)
 
-		fmt.Printf("Data extracted******: %v \n******", extractedData)
-		fmt.Printf("success: %v\n", extractedData.Success)
+		gobackup.Logger.Printf("Data extracted******: %v \n******", extractedData)
+		gobackup.Logger.Printf("success: %v\n", extractedData.Success)
 		if len(extractedData.Result) != 0 {
 			if Verbose {
-				fmt.Printf("size of result:%v\n", len(extractedData.Result))
-				fmt.Printf("result: %v \n\n", extractedData.Result)
+				gobackup.Logger.Printf("size of result:%v\n", len(extractedData.Result))
+				gobackup.Logger.Printf("result: %v \n\n", extractedData.Result)
 			}
 
-			fmt.Println("Adding extracted keys and metadata to data1 struct")
+			gobackup.Logger.Println("Adding extracted keys and metadata to data1 struct")
 			for i := 0; i < len(extractedData.Result); i++ {
 				//update the data struct
 				dat.TheMetadata = append(dat.TheMetadata, extractedData.Result[i].TheMetadata)
-				fmt.Println("Added " + extractedData.Result[i].TheMetadata.FileName)
+				gobackup.Logger.Println("Added " + extractedData.Result[i].TheMetadata.FileName)
 			}
 
-			fmt.Printf("Size of the data1 metadata array: %v\n", len(dat.TheMetadata))
-			fmt.Printf("dat: %v\n\n\n", dat.TheMetadata)
+			gobackup.Logger.Printf("Size of the data1 metadata array: %v\n", len(dat.TheMetadata))
+			gobackup.Logger.Printf("dat: %v\n\n\n", dat.TheMetadata)
 			//			sort.Sort(gobackup.ByHash(dat.TheMetadata))
 
 			gobackup.DataFile2("data.dat", &dat)
 
 		} else {
-			fmt.Println("Empty Result")
+			gobackup.Logger.Println("Empty Result")
 		}
 		os.Exit(0)
 	}
@@ -305,14 +307,16 @@ func extractCommandLine() {
 //search the data file for hash, line by line
 //hash is the hash from a file, fileName is a file
 //in the future, may introduce a binary search or a simple index for a pre-sorted data file
-func searchData(hash string, fileName string) bool {
+func searchData(hash string) bool {
 
 	file, err := os.Open("data.dat")
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Print("data.dat file Does Not Exist. Creating a new data.dat file!")
+			gobackup.Logger.Print("data.dat file Does Not Exist. Creating a new data.dat file!")
 			file, err = os.Create("data.dat")
-			gobackup.CheckError(err, "searchData failed to create data.dat!")
+			if !gobackup.CheckError(err, "searchData failed to create data.dat!") {
+				gobackup.Logger.Fatalln("Closing program!")
+			}
 		} else {
 			gobackup.CheckError(err, "searchData failed opening file:data.dat")
 		}
@@ -323,13 +327,10 @@ func searchData(hash string, fileName string) bool {
 	scan := bufio.NewScanner(file)
 	scan.Split(bufio.ScanLines)
 	for scan.Scan() {
-		a := scan.Text()           //get lines of data.dat
-		b := strings.Split(a, ":") //split out the data
-		if len(b[0]) != 32 {
-			b[0] = b[0][:32] //get the base hash
-		}
+		line := scan.Text()                //get lines of data.dat
+		column := strings.Split(line, ":") //split out the data
 
-		if b[0] == hash && fileName == b[1] {
+		if column[0] == hash {
 			return true
 		}
 	}
@@ -380,12 +381,13 @@ func main() {
 
 	//prevent other local gobackup instances from altering critical files
 	gobackup.AddLock()
+	defer gobackup.DeleteLock()
 
 	//the filelist for backup
 	var fileList []string
 
 	if Verbose {
-		fmt.Printf("CF LOCATION:%v", cf.Location)
+		gobackup.Logger.Printf("CF LOCATION:%v", cf.Location)
 	}
 
 	backupLocations := strings.Split(cf.Location, ",")
@@ -399,54 +401,74 @@ func main() {
 	//fill in the Metadata
 	for _, f := range fileList {
 		hash := gobackup.Md5file(f)
+		hashContentAndMeta := gobackup.Md5fileAndMeta(f)
 
+		//debug info
 		if gobackup.Debug {
 			openFile, _ := os.Open(f)
 			contents, _ := ioutil.ReadAll(openFile)
-			fmt.Printf("For Loop: (f:%v)(hash:%v)(contents:%v)", f, hash, string(contents))
+			gobackup.Logger.Printf("For Loop: (f:%v)(hash:%v)(contents:%v)", f, hash, string(contents))
 		}
-		//if not found
-		if !searchData(hash, f) {
+		//if content hash not found, need two entries 1, content hash, 2, content and meta hash
+		if !searchData(hash) {
 			meta := gobackup.CreateMeta(f)
-			fmt.Println("NOT FOUND AND INCLUDING! " + hash + "-" + gobackup.GetMetadata(meta))
 
-			//update the data struct
+			metaFK := gobackup.CreateMeta(f)
+			metaFK.ForeignKey = hash
+			metaFK.Hash = hashContentAndMeta
+
+			gobackup.Logger.Println("NOT FOUND AND INCLUDING! " + hash + "-fkhash " + metaFK.ForeignKey + " metadata " + gobackup.GetMetadata(metaFK))
+
+			//update the data struct with the content
 			dat.TheMetadata = append(dat.TheMetadata, meta)
+
+			//update the data struct with the foreign key
+			dat.TheMetadata = append(dat.TheMetadata, metaFK)
 
 			sort.Sort(gobackup.ByHash(dat.TheMetadata))
 
+			gobackup.Logger.Printf("Checking For foreign key: %v\n*******end FK check", dat.TheMetadata)
+
 			dat.DataSize += meta.Size
 			dat.Count += 1
+		} else if !searchData(hashContentAndMeta) { //content hash was found, so now check for content and meta hash
+			metaFK := gobackup.CreateMeta(f)
+			metaFK.Hash = hashContentAndMeta
+			metaFK.ForeignKey = hash
+			gobackup.Logger.Println("CONTENT HASH FOUND, FOREIGN KEY NOT FOUND! Adding key:" + hashContentAndMeta + "-" + gobackup.GetMetadata(metaFK))
+
+			//update the data struct with the foreign key
+			dat.TheMetadata = append(dat.TheMetadata, metaFK)
+
+			sort.Sort(gobackup.ByHash(dat.TheMetadata))
+
 		} else {
-			fmt.Println("FOUND AND EXCLUDING! " + hash)
+			gobackup.Logger.Println("FOUND AND EXCLUDING! " + hash)
 		}
 	} //for
 
 	//TheMetadata is empty, then there is no work left to be done. Exit program
 	if len(dat.TheMetadata) == 0 {
-		fmt.Println("All files are up to date! Exiting!")
+		gobackup.Logger.Println("All files are up to date! Exiting!")
+		gobackup.DeleteLock()
 		os.Exit(0)
 	}
 
 	//information for user
-	fmt.Printf("Original File: %s, Data Size: %v, Data Count: %v", dat.TheMetadata[0].FileName, dat.DataSize, dat.Count)
+	gobackup.Logger.Printf("Original File: %s, Data Size: %v, Data Count: %v", dat.TheMetadata[0].FileName, dat.DataSize, dat.Count)
 
 	//split the work and backup
 	backup()
 
 	//download the data
-	fmt.Println(gobackup.DownloadKV(&cf, dat.TheMetadata[0].Hash, "test.txt"))
+	//	fmt.Println(gobackup.DownloadKV(&cf, dat.TheMetadata[0].Hash, "test.txt"))
 
 	//update the local data file
 
 	if gobackup.DryRun {
-		fmt.Println("Dry Run dataFile2 is running!")
+		gobackup.Logger.Println("Dry Run dataFile2 is running!")
 		gobackup.DataFile2("", &dat)
 	} else {
 		gobackup.DataFile2("data.dat", &dat)
 	}
-
-	//remove locks
-	gobackup.DeleteLock()
-
 } //main

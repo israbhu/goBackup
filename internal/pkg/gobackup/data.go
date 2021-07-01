@@ -11,9 +11,24 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
+
+//determine if a path is relative or not
+func isRelative(file string) bool {
+	workingDirectory, _ := os.Getwd()
+
+	volumeName := filepath.VolumeName(workingDirectory)
+
+	//if there's a volumename, it should not be relative
+	if strings.Contains(file, volumeName) {
+		return false
+	} else {
+		return true
+	}
+}
 
 //convert hex bytes into a string
 func hashToString(in []byte) string {
@@ -38,6 +53,18 @@ func Md5file(in string) string {
 	return hashToString(data[:])
 }
 
+//run md5 hash on a file contents and metadata
+func Md5fileAndMeta(in string) string {
+	dat, err := ioutil.ReadFile(in)
+	if err != nil {
+		Logger.Fatalf("md5 failed")
+	}
+	result := fmt.Sprintf("%v%v", string(dat), CreateMeta(in))
+	Logger.Printf("CONTENT AND META******%v******\n\n", result)
+	data := md5.Sum([]byte(result))
+	return hashToString(data[:])
+}
+
 //write data in a stream-like fashion
 func BuildData2(a *Data1) ([]byte, error) {
 	var result bytes.Buffer
@@ -46,7 +73,7 @@ func BuildData2(a *Data1) ([]byte, error) {
 		aMetadata := a.TheMetadata[i]
 		part, err := json.Marshal(aMetadata)
 		if err != nil {
-			fmt.Println(err)
+			Logger.Println(err)
 		}
 
 		result.WriteString(string(part))
@@ -124,7 +151,7 @@ func BuildData(a *Data1) string {
 	//end the array
 	sb.WriteString("]")
 
-	fmt.Println("SB =" + sb.String())
+	Logger.Println("SB =" + sb.String())
 	return sb.String()
 }
 
@@ -133,17 +160,16 @@ func DataFile2(file string, dat *Data1) {
 	var theFile io.ReadWriter
 	var err error
 
-	if file == "" { //dryRun
-		fmt.Println("Dry run, setting output to standard out!")
+	if DryRun { //dryRun
+		Logger.Println("Dry run, setting output to standard out!")
 		theFile = os.Stdout
 	} else {
-		fmt.Println("Opening the data.dat file!")
+		Logger.Println("Opening the data.dat file!")
 		theFile, err = os.OpenFile(file, os.O_APPEND|os.O_CREATE, 0644)
 		if err != nil {
 			Logger.Fatalf("problem opening file '%s': %v", file, err)
 		}
 	}
-	//	defer theFile.Close()
 
 	datawriter := bufio.NewWriter(theFile)
 	for i, data := range dat.TheMetadata {
@@ -151,7 +177,9 @@ func DataFile2(file string, dat *Data1) {
 		_, err := datawriter.WriteString(dat.TheMetadata[i].Hash + ":" + GetMetadata(data) + "\n")
 		CheckError(err, "Error in Datafile2!")
 
-		fmt.Printf("Adding item:%v and data:%v\n", i, data)
+		if Verbose {
+			Logger.Printf("Adding item:%v and data:%v\n", i, data)
+		}
 	}
 	datawriter.Flush()
 
@@ -166,10 +194,28 @@ func CreateMeta(file string) Metadata {
 
 	var temp Metadata
 
-	fmt.Printf("permissions: %#o\n", fi.Mode().Perm()) // 0400, 0777, etc.
+	Logger.Printf("permissions: %#o\n", fi.Mode().Perm()) // 0400, 0777, etc.
 
 	temp.FileName = file
 	temp.Hash = Md5file(file)
+	/*
+	   	//check if the path is relative
+	   	if isRelative(file) {
+	   		workingDirectory, _ := os.Getwd()
+	   //		volumeName := filepath.VolumeName(workingDirectory)
+
+	   		//if the path has a ., then need to modify the path
+	   		// you can do a .\ or .\dir or a ..\ or a ..\dir1\dir2
+	   		if strings.Contains(file, ".") {
+
+	   		} else {
+	   			temp.Filepath = workingDirectory+string(os.PathSeparator)+file
+	   		}
+	   	} else {
+	   		temp.Filepath = file
+	   	}
+	*/
+	temp.ForeignKey = ""
 	temp.FileNum = 0
 	temp.File = "f1o1"
 	temp.Mtime = fi.ModTime()
@@ -185,18 +231,18 @@ func GetMetadata(d Metadata) string {
 
 func (a Stream) MarshalJSON() ([]byte, error) {
 	//start of marshal
-	fmt.Println("Marshal is working!")
+	Logger.Println("Marshal is working!")
 	//convert from Stream type to string
 	filename := string(a)
 
 	file, err := os.Open(filename)
 	if err != nil {
-		fmt.Println(err)
+		Logger.Println(err)
 	}
 
 	fileContents, err := ioutil.ReadAll(file)
 	if err != nil {
-		fmt.Println(err)
+		Logger.Println(err)
 	}
 
 	//escape html
@@ -204,7 +250,7 @@ func (a Stream) MarshalJSON() ([]byte, error) {
 	base64 = "\"" + base64 + "\""
 
 	//dest, source
-	fmt.Printf("Length:%v", len(base64))
+	Logger.Printf("Length:%v", len(base64))
 	return []byte(base64), nil
 }
 
@@ -216,6 +262,8 @@ type Metadata struct {
 	//note: = notes
 	//modified timestamp
 	//permissions
+	//hash is the hash of the contents
+	//foreign key is the hash of the contents and metadata (blank if source data)
 	//folder structure
 	//Metadata filename:
 	//FileNum is the current file number (starting from 0) in a file that has been split
@@ -225,6 +273,7 @@ type Metadata struct {
 	Permissions string    `json:"permissions"`
 	Filepath    string    `json:"filepath"`
 	Hash        string    `json:"hash"`
+	ForeignKey  string    `json:"foreignkey"`
 	FileNum     int       `json:"file_num"`
 	FileName    string    `json:"filename"`
 	Mtime       time.Time `json:"mtime"`
