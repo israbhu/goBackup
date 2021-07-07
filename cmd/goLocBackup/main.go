@@ -366,6 +366,27 @@ type Account struct {
 	Backup string
 }
 
+func populatePayloadAndMeta(dat *gobackup.Data1, meta *gobackup.Metadata, hashContentAndMeta string) {
+	metaFK := *meta
+	metaFK.ForeignKey = meta.Hash
+	metaFK.Hash = hashContentAndMeta
+
+	gobackup.Logger.Println("NOT FOUND AND INCLUDING! " + meta.Hash + "-fkhash " + metaFK.ForeignKey + " metadata " + gobackup.GetMetadata(metaFK))
+
+	//update the data struct with the content
+	dat.TheMetadata = append(dat.TheMetadata, *meta)
+
+	//update the data struct with the foreign key
+	dat.TheMetadata = append(dat.TheMetadata, metaFK)
+
+	sort.Sort(gobackup.ByHash(dat.TheMetadata))
+
+	gobackup.Logger.Printf("Checking For foreign key: %v\n*******end FK check", dat.TheMetadata)
+
+	dat.DataSize += meta.Size
+	dat.Count += 1
+}
+
 func main() {
 	//command line can overwrite the data from the preferences file
 	extractCommandLine()
@@ -412,25 +433,7 @@ func main() {
 		//if content hash not found, need two entries 1, content hash, 2, content and meta hash
 		if !searchData(hash) {
 			meta := gobackup.CreateMeta(f)
-
-			metaFK := gobackup.CreateMeta(f)
-			metaFK.ForeignKey = hash
-			metaFK.Hash = hashContentAndMeta
-
-			gobackup.Logger.Println("NOT FOUND AND INCLUDING! " + hash + "-fkhash " + metaFK.ForeignKey + " metadata " + gobackup.GetMetadata(metaFK))
-
-			//update the data struct with the content
-			dat.TheMetadata = append(dat.TheMetadata, meta)
-
-			//update the data struct with the foreign key
-			dat.TheMetadata = append(dat.TheMetadata, metaFK)
-
-			sort.Sort(gobackup.ByHash(dat.TheMetadata))
-
-			gobackup.Logger.Printf("Checking For foreign key: %v\n*******end FK check", dat.TheMetadata)
-
-			dat.DataSize += meta.Size
-			dat.Count += 1
+			populatePayloadAndMeta(&dat, &meta, hashContentAndMeta)
 		} else if !searchData(hashContentAndMeta) { //content hash was found, so now check for content and meta hash
 			metaFK := gobackup.CreateMeta(f)
 			metaFK.Hash = hashContentAndMeta

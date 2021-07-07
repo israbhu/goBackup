@@ -57,7 +57,7 @@ func Md5file(in string) string {
 func Md5fileAndMeta(in string) string {
 	dat, err := ioutil.ReadFile(in)
 	if err != nil {
-		Logger.Fatalf("md5 failed")
+		Logger.Fatalf("while generating hash for file and metadata: %v", err)
 	}
 	result := fmt.Sprintf("%v%v", string(dat), CreateMeta(in))
 	Logger.Printf("CONTENT AND META******%v******\n\n", result)
@@ -268,7 +268,7 @@ type Metadata struct {
 	//Metadata filename:
 	//FileNum is the current file number (starting from 0) in a file that has been split
 	//Metadata example test.txt:f2o4:ph#:fh#:
-	File        string    `json:"File"`
+	File        string    `json:"file"`
 	Notes       string    `json:"notes"`
 	Permissions string    `json:"permissions"`
 	Filepath    string    `json:"filepath"`
