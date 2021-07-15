@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"os"
 	"sync"
+
+	"github.com/golang/glog"
 )
 
 var wg sync.WaitGroup
@@ -25,20 +27,20 @@ func ValidateCF(cloud *Account) bool {
 	}
 	//check the required fields are not blank
 	if cloud.Email == "" {
-		Logger.Fatalf("Email information is empty. Please edit your preferences.toml with the email associated with your cloudflare account")
+		glog.Fatalf("Email information is empty. Please edit your preferences.toml with the email associated with your cloudflare account")
 		pass = false
 	}
 	if cloud.Namespace == "" {
 		pass = false
-		Logger.Fatalf("Namespace information is empty. Please edit your preferences.toml with valid info")
+		glog.Fatalf("Namespace information is empty. Please edit your preferences.toml with valid info")
 	}
 	if cloud.Account == "" {
 		pass = false
-		Logger.Fatalf("Account information is empty. Please edit your preferences.toml with valid info")
+		glog.Fatalf("Account information is empty. Please edit your preferences.toml with valid info")
 	}
 	if cloud.Key == "" || cloud.Token == "" {
 		pass = false
-		Logger.Fatalf("Key and Token are empty. Please edit your preferences.toml with a valid key or token. It is best practice to access your account through a least priviledged token.")
+		glog.Fatalf("Key and Token are empty. Please edit your preferences.toml with a valid key or token. It is best practice to access your account through a least priviledged token.")
 	}
 	//check the length of data
 
@@ -56,12 +58,12 @@ func GetKVkeys(cf *Account) []byte {
 	//request GET accounts/:account_identifier/storage/kv/namespaces/:namespace_identifier/keys
 	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/keys"
 
-	Logger.Println("GET KEY REQUEST:" + request)
+	glog.Infoln("GET KEY REQUEST:" + request)
 
 	//get request to get the key data
 	req, err := http.NewRequest("GET", request, &requestBody)
 	if err != nil {
-		Logger.Fatalln(err)
+		glog.Fatalln(err)
 	}
 
 	//set the content type
@@ -84,27 +86,23 @@ func GetKVkeys(cf *Account) []byte {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		Logger.Fatalln(err)
+		glog.Fatalln(err)
 	}
 
 	//debug information
-	if Debug {
-		Logger.Print("Printing Response Header info: \n")
-		Logger.Println(resp)
-	}
+	glog.V(2).Info("Printing Response Header info: \n")
+	glog.V(2).Infoln(resp)
 
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		Logger.Fatalln(err)
+		glog.Fatalln(err)
 	}
 
 	//verbose information showing the "response" json data
 	//name and metadata fields
-	if Verbose {
-		Logger.Println("Response Body: \n" + string(body))
-	}
+	glog.V(1).Infoln("Response Body: " + string(body))
 
 	return body
 }
@@ -114,7 +112,7 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 
 	filename := meta.FileName
 	//max value size = 25 mb
-	Logger.Println("UploadKV starting")
+	glog.Infoln("UploadKV starting")
 
 	client := &http.Client{}
 
@@ -129,7 +127,7 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 	//create the name="value" part of the upload
 	formWriter, err := w.CreateFormFile("value", filename)
 	if err != nil {
-		Logger.Fatalln(err)
+		glog.Fatalln(err)
 	}
 
 	//if the foreign key is blank, we need to upload stuff
@@ -138,25 +136,25 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 		pr, pw := io.Pipe()
 
 		if cf.Zip == "zstandard" {
-			if Verbose {
-				Logger.Println("*************")
-				Logger.Println("zstandard")
-				Logger.Println("*************")
+			if glog.V(1) {
+				glog.Infoln("*************")
+				glog.Infoln("zstandard")
+				glog.Infoln("*************")
 			}
 			go zStandardInit(filename, pw)
 		} else if cf.Zip == "zip" {
-			if Verbose {
-				Logger.Println("*************")
-				Logger.Println("zip")
-				Logger.Println("*************")
+			if glog.V(1) {
+				glog.Infoln("*************")
+				glog.Infoln("zip")
+				glog.Infoln("*************")
 			}
 			errCh := make(chan error, 1)
 			go zipInit(filename, pr, pw, errCh)
 		} else { //no compression
-			if Verbose {
-				Logger.Println("*************")
-				Logger.Println("no compression")
-				Logger.Println("*************")
+			if glog.V(1) {
+				glog.Infoln("*************")
+				glog.Infoln("no compression")
+				glog.Infoln("*************")
 			}
 			go copyFile(filename, pr, pw)
 		}
@@ -164,21 +162,21 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 		//copy up to 24MB using the pipereader
 		written, err := io.CopyN(formWriter, pr, 24*1024*1024)
 		if err != nil && err != io.EOF {
-			Logger.Printf("Err != nil, Bytes written:%v", written)
-			Logger.Fatalln(err)
+			glog.Infof("Err != nil, Bytes written:%v", written)
+			glog.Fatalln(err)
 		}
 
-		Logger.Printf("%v encoded %v bytes\n", cf.Zip, written)
+		glog.Infof("%v encoded %v bytes\n", cf.Zip, written)
 	} //end check of foreign key
 
 	formWriter, err = w.CreateFormField("metadata")
 	if err != nil {
-		Logger.Fatalln(err)
+		glog.Fatalln(err)
 	}
 
 	jsonBytes, err := json.Marshal(meta)
 	if err != nil {
-		Logger.Fatalf("Could not marshal metadata %+v: %v", meta, err)
+		glog.Fatalf("Could not marshal metadata %+v: %v", meta, err)
 	}
 	formWriter.Write(jsonBytes) //send metadata
 
@@ -193,11 +191,11 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 			request = "127.0.0.1"
 		}
 	*/
-	Logger.Println("UPLOAD REQUEST:" + request)
+	glog.V(2).Infoln("UPLOAD REQUEST:" + request)
 	//put request to upload the data
 	req, err := http.NewRequest(http.MethodPut, request, &fileUpload)
 	if err != nil {
-		Logger.Fatalln(err)
+		glog.Fatalln(err)
 	}
 
 	// Don't forget to set the content type, this will contain the boundary.
@@ -211,37 +209,35 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 
 	req.Header.Set("X-Auth-Email", cf.Email)
 
-	if Debug {
-		Logger.Printf("Request to be sent: %q\n", fmt.Sprintf("%+v", req))
-	}
+	glog.V(2).Infof("Request to be sent: %q\n", fmt.Sprintf("%+v", req))
 
 	if DryRun {
 		return true
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		Logger.Fatalln(err)
+		glog.Fatalln(err)
 	}
 
-	Logger.Println(resp)
+	glog.V(2).Infoln(resp)
 
 	var response CloudflareResponse
 
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		Logger.Fatalln(err)
+		glog.Fatalln(err)
 	}
 	json.Unmarshal(body, &response)
 
-	if !response.Success {
-		Logger.Println("***Body of response***")
-		Logger.Println(string(body))
-		Logger.Println("***End Body of response***")
-		Logger.Println("File was not uploaded, exiting")
-		Logger.Fatalln("No upload!")
+	if !response.Success && bool(glog.V(2)) {
+		glog.Infoln("***Body of response***")
+		glog.Infoln(string(body))
+		glog.Infoln("***End Body of response***")
+		glog.Infoln("File was not uploaded, exiting")
+		glog.Fatalln("No upload!")
 	} else {
-		Logger.Printf("Successfully uploaded %v\n", filename)
+		glog.Infof("Successfully uploaded %v\n", filename)
 	}
 	//wait for all uploads and downloads to complete
 	wg.Wait()
@@ -259,7 +255,7 @@ func UploadKV(cf *Account, meta Metadata) bool {
 
 	filename := meta.FileName
 	//max value size = 25 mb
-	Logger.Println("UploadKV starting")
+	glog.Infoln("UploadKV starting")
 
 	client := &http.Client{}
 
@@ -282,12 +278,12 @@ func UploadKV(cf *Account, meta Metadata) bool {
 		//copy up to 24MB using the pipereader
 		written, err := io.CopyN(&fileUpload, pr, 24*1024*1024)
 		if err != nil && err != io.EOF {
-			Logger.Fatalf("Bytes written: %d, err: %v\n", written, err)
+			glog.Fatalf("Bytes written: %d, err: %v\n", written, err)
 		}
 
 		//if written is exactly at the maximum N, then we haven't finished using the data in the pipe
 		if written == 24*1024*1024 {
-			Logger.Printf("***File is larger than 24MB, new upload initiated***")
+			glog.Infof("***File is larger than 24MB, new upload initiated***")
 			meta.FileNum += 1
 			meta.pr = pr
 
@@ -304,12 +300,12 @@ func UploadKV(cf *Account, meta Metadata) bool {
 		//copy up to 24MB using the pipereader
 		written, err := io.CopyN(&fileUpload, meta.pr, 24*1024*1024)
 		if err != nil {
-			Logger.Fatalln(err)
+			glog.Fatalln(err)
 		}
 
 		//if written is exactly at the maximum N, then we haven't finished using the data in the pipe
 		if written == 24*1024*1024 {
-			Logger.Printf("***File is larger than 24MB, new upload initiated***")
+			glog.Infof("***File is larger than 24MB, new upload initiated***")
 
 			meta.FileNum += 1
 
@@ -326,11 +322,11 @@ func UploadKV(cf *Account, meta Metadata) bool {
 	// 5/10/21	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + hash
 	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + hash + "?value=testvalue?metadata=testmetadata"
 	//	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/valu
-	Logger.Println("UPLOAD REQUEST:" + request)
+	glog.Infoln("UPLOAD REQUEST:" + request)
 	//put request to upload the data
 	req, err := http.NewRequest(http.MethodPut, request, &fileUpload)
 	if err != nil {
-		Logger.Fatalln(err)
+		glog.Fatalln(err)
 	}
 
 	//set the content type -- to verify
@@ -348,18 +344,18 @@ func UploadKV(cf *Account, meta Metadata) bool {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		Logger.Fatalln(err)
+		glog.Fatalln(err)
 	}
 
-	Logger.Println(resp)
+	glog.Infoln(resp)
 
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		Logger.Fatalln(err)
+		glog.Fatalln(err)
 	}
-	Logger.Println(string(body))
-	Logger.Println("Done with uploadKV")
+	glog.Infoln(string(body))
+	glog.Infoln("Done with uploadKV")
 
 	//wait for all uploads and downloads to complete
 	wg.Wait()
@@ -381,10 +377,10 @@ func DownloadKV(cf *Account, dataKey string, filepath string) bool {
 	*/
 	req, err := http.NewRequest("GET", request, nil)
 	if err != nil {
-		Logger.Fatalln(err)
+		glog.Fatalln(err)
 	}
 
-	Logger.Println("REQUEST:" + request)
+	glog.Infoln("REQUEST:" + request)
 
 	//set the content type -- to verify
 	req.Header.Set("Content-Type", "application/json")
@@ -403,23 +399,23 @@ func DownloadKV(cf *Account, dataKey string, filepath string) bool {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		Logger.Fatalln(err)
+		glog.Fatalln(err)
 	}
 
-	Logger.Println(resp)
+	glog.V(2).Infoln(resp)
 
 	defer resp.Body.Close()
 
 	out, err := os.Create(filepath)
 	if err != nil {
-		Logger.Println(err)
+		glog.Infoln(err)
 	}
 	defer out.Close()
 
 	// Write the body to file
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {
-		Logger.Println(err)
+		glog.Infoln(err)
 	}
 
 	return true

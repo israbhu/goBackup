@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/golang/glog"
 )
 
 //determine if a path is relative or not
@@ -46,7 +48,7 @@ func md5string(a string) string {
 func Md5file(in string) string {
 	dat, err := ioutil.ReadFile(in)
 	if err != nil {
-		Logger.Fatalf("md5 failed")
+		glog.Fatalf("md5 failed")
 	}
 	data := md5.Sum(dat)
 	return hashToString(data[:])
@@ -56,11 +58,11 @@ func Md5file(in string) string {
 func Md5fileAndMeta(in string) string {
 	dat, err := ioutil.ReadFile(in)
 	if err != nil {
-		Logger.Fatalf("while generating hash for file and metadata: %v", err)
+		glog.Fatalf("while generating hash for file and metadata: %v", err)
 	}
 
 	result := fmt.Sprintf("%v%v", string(dat), CreateMeta(in))
-	Logger.Printf("CONTENT AND META******%v******\n\n", result)
+	glog.V(2).Infof("CONTENT AND META******%v******\n\n", result)
 	data := md5.Sum([]byte(result))
 	return hashToString(data[:])
 }
@@ -73,7 +75,8 @@ func BuildData2(a *DataContainer) ([]byte, error) {
 		aMetadata := a.TheMetadata[i]
 		part, err := json.Marshal(aMetadata)
 		if err != nil {
-			Logger.Println(err)
+			glog.Warningf("While marshaling metadata %+v: %v", aMetadata, err)
+			continue
 		}
 
 		result.WriteString(string(part))
@@ -98,13 +101,13 @@ func BuildData(a *DataContainer) string {
 
 		file, err := os.Open(string(d.FileName))
 		if err != nil {
-			Logger.Fatalf("searchData failed opening file:" + string(d.FileName))
+			glog.Fatalf("searchData failed opening file:" + string(d.FileName))
 		}
 		defer file.Close()
 
 		body, err := ioutil.ReadAll(file)
 		if err != nil {
-			Logger.Fatalln(err)
+			glog.Fatalln(err)
 		}
 
 		sb.WriteString("{\"key\":\"")
@@ -125,13 +128,13 @@ func BuildData(a *DataContainer) string {
 
 	file, err := os.Open(string(d.FileName))
 	if err != nil {
-		Logger.Fatalf("searchData failed opening file:" + string(d.FileName))
+		glog.Fatalf("searchData failed opening file:" + string(d.FileName))
 	}
 	defer file.Close()
 
 	body, err := ioutil.ReadAll(file)
 	if err != nil {
-		Logger.Fatalln(err)
+		glog.Fatalln(err)
 	}
 
 	sb.WriteString("{\"key\":\"")
@@ -152,7 +155,7 @@ func BuildData(a *DataContainer) string {
 	//end the array
 	sb.WriteString("]")
 
-	Logger.Println("SB =" + sb.String())
+	glog.Infoln("SB =" + sb.String())
 	return sb.String()
 }
 */
@@ -163,13 +166,13 @@ func DataFile2(file string, dat *DataContainer) {
 	var err error
 
 	if DryRun { //dryRun
-		Logger.Println("Dry run, setting output to standard out!")
+		glog.Infoln("Dry run, setting output to standard out!")
 		theFile = os.Stdout
 	} else {
-		Logger.Println("Opening the data.dat file!")
+		glog.Infoln("Opening the data.dat file!")
 		theFile, err = os.OpenFile(file, os.O_APPEND|os.O_CREATE, 0644)
 		if err != nil {
-			Logger.Fatalf("problem opening file '%s': %v", file, err)
+			glog.Fatalf("problem opening file '%s': %v", file, err)
 		}
 	}
 
@@ -179,9 +182,7 @@ func DataFile2(file string, dat *DataContainer) {
 		_, err := datawriter.WriteString(dat.TheMetadata[i].Hash + ":" + GetMetadata(data) + "\n")
 		CheckError(err, "Error in Datafile2!")
 
-		if Verbose {
-			Logger.Printf("Adding item:%v and data:%v\n", i, data)
-		}
+		glog.V(1).Infof("Adding item:%v and data:%v", i, data)
 	}
 	datawriter.Flush()
 
@@ -191,12 +192,12 @@ func DataFile2(file string, dat *DataContainer) {
 func CreateMeta(file string) Metadata {
 	fi, err := os.Lstat(file)
 	if err != nil {
-		Logger.Fatalln(err)
+		glog.Fatalln(err)
 	}
 
 	var temp Metadata
 
-	Logger.Printf("permissions: %#o\n", fi.Mode().Perm()) // 0400, 0777, etc.
+	glog.Infof("permissions: %#o\n", fi.Mode().Perm()) // 0400, 0777, etc.
 
 	temp.FileName = file
 	temp.Hash = Md5file(file)

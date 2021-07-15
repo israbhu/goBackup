@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/golang/glog"
 	"github.com/israbhu/goBackup/internal/pkg/gobackup"
 	"github.com/pelletier/go-toml"
 )
@@ -18,7 +19,6 @@ import (
 //***************global variables*************
 var cf gobackup.Account        //account credentials and preferences
 var dat gobackup.DataContainer //local datastore tracking uploads and Metadata
-var Verbose bool               //flag for extra info output to console
 
 //backs up the list of files
 //uploading the data should be the most time consuming portion of the program, so it will pushed into a go routine
@@ -35,7 +35,7 @@ func readTOML(file string) {
 
 	if gobackup.FileExist(file) {
 
-		gobackup.Logger.Printf("Reading in the toml file, %v", file)
+		glog.Infof("Reading in the toml file, %v", file)
 		dat, err := ioutil.ReadFile(file)
 		gobackup.CheckError(err, "")
 
@@ -45,25 +45,19 @@ func readTOML(file string) {
 
 		if file == "data.dat" {
 			toml.Unmarshal(doc2, &dat)
-			//verbose flag
-			if Verbose {
-				gobackup.Logger.Println("Reading in the data file:" + file)
-				gobackup.Logger.Println(dat)
-			}
+			glog.V(1).Infoln("Reading in the data file:" + file)
+			glog.V(1).Infoln(dat)
 
 		} else {
 			toml.Unmarshal(doc2, &cf)
 
-			//verbose flag
-			if Verbose {
-				gobackup.Logger.Println("Reading in the preference file:" + file)
-				gobackup.Logger.Println(cf)
-			}
+			glog.V(1).Infoln("Reading in the preference file:" + file)
+			glog.V(1).Infoln(cf)
 		}
 	} else { //the file does not exist
 		workingDirectory, _ := os.Getwd()
 
-		gobackup.Logger.Output(1, "The file, "+workingDirectory+string(os.PathSeparator)+file+" does not exist! We strongly recommend creating the file for higher efficiency.")
+		glog.Warningf("The file '%s' does not exist! We strongly recommend creating the file for higher efficiency.", filepath.Join(workingDirectory, file))
 	} //else
 
 }
@@ -91,7 +85,6 @@ func mkdir(name string) {
 	if gobackup.FileExist(name) {
 		return
 	} else {
-		gobackup.Logger.Print("not exists")
 		err := os.Mkdir(name, 0755)
 		gobackup.CheckError(err, "")
 	}
@@ -100,7 +93,7 @@ func mkdir(name string) {
 func resolvePath(file string) string {
 	path, err := filepath.Abs(file)
 	if err != nil {
-		gobackup.Logger.Fatalf("resovePath has encountered an error: %v", err)
+		glog.Fatalf("resovePath has encountered an error: %v", err)
 	}
 
 	return path
@@ -114,7 +107,7 @@ func resolvePath(file string) string {
 func getFiles(name string, f []string) []string {
 	//make sure name is valid
 	if name == "" {
-		gobackup.Logger.Println("getFiles name is blank, getting files from local directory")
+		glog.Infoln("getFiles name is blank, getting files from local directory")
 		name = "."
 	}
 
@@ -130,14 +123,12 @@ func getFiles(name string, f []string) []string {
 		}
 	}
 
-	gobackup.Logger.Printf("getFiles name=**%v**\n", name)
-	//	fmt.Printf("my cf email is %v", cf.Email)
-	//	log.Fatalln("Stopping here for checkup")
+	glog.V(2).Infof("getFiles name=**%v**\n", name)
 	err := filepath.Walk(name, func(path string, info os.FileInfo, err error) error {
 		if !gobackup.CheckError(err, "") {
 			basedir, _ := os.Getwd()
 
-			gobackup.Logger.Fatalf("Cannot find %v. Closing the program!", basedir+string(os.PathSeparator)+path)
+			glog.Fatalf("Cannot find %v. Closing the program!", filepath.Join(basedir, path))
 		}
 		//remove .
 		if path != "." && !info.IsDir() {
@@ -146,7 +137,7 @@ func getFiles(name string, f []string) []string {
 		return nil
 	})
 	if !gobackup.CheckError(err, "") {
-		gobackup.Logger.Fatalf("Error found: %v", err)
+		glog.Fatalf("Error found: %v", err)
 	}
 	return f
 }
@@ -165,32 +156,27 @@ func extractCommandLine() {
 	//	var backupFlag = flag.String("backup", "", "Backup strategy")
 	var downloadFlag = flag.String("download", "", "Download files. By default use the preferences location. Use -location and -addLocation to modify the files downloaded.")
 	var zipFlag = flag.String("zip", "", "Set the zip compression to 'none', 'zstandard', or 'zip'")
-	var verboseFlag = flag.Bool("v", false, "More information")
 	var altPrefFlag = flag.String("pref", "", "use an alternate preference file")
 	var dryRunFlag = flag.Bool("dryrun", false, "Dry run. Goes through all the steps, but it makes no changes on disk or network")
 	var dryFlag = flag.Bool("dry", false, "Dry run. Goes through all the steps, but it makes no changes on disk or network")
 	var getKeysFlag = flag.Bool("keys", false, "Get the keys and metadata from cloudflare")
-	var debugFlag = flag.Bool("debug", false, "Debugging information is shown")
 	var syncFlag = flag.Bool("sync", false, "Download the keys and metadata from cloud and overwrite the local database")
 	//	var forcePrefFlag = flag.String("f", "", "ignore the lock")
 
 	flag.Parse()
-	gobackup.Logger.Println("Checking flags!")
+	glog.Infoln("Checking flags!")
 
 	if *altPrefFlag != "" {
-		gobackup.Logger.Println("Alernate Preferences file detected, checking:")
+		glog.Infoln("Alernate Preferences file detected, checking:")
 		readTOML(*altPrefFlag)
 		if !gobackup.ValidateCF(&cf) {
-			gobackup.Logger.Printf("%v has errors that need to be fixed!", *altPrefFlag)
+			glog.Infof("%v has errors that need to be fixed!", *altPrefFlag)
 		}
 	}
 
 	//overwrite over any preferences file
 	if *emailFlag != "" {
 		cf.Email = *emailFlag
-	}
-	if *debugFlag {
-		gobackup.Debug = true
 	}
 	if *accountFlag != "" {
 		cf.Account = *accountFlag
@@ -216,14 +202,10 @@ func extractCommandLine() {
 	if *zipFlag != "" {
 		cf.Zip = *zipFlag
 	}
-	if *verboseFlag {
-		Verbose = true
-		gobackup.Verbose = true
-		gobackup.Logger.Println("Verbose information is true, opening the flood gates!")
-	}
+	glog.V(1).Infoln("Verbose information is true, opening the flood gates!")
 	if *dryRunFlag || *dryFlag {
 		gobackup.DryRun = true
-		gobackup.Logger.Println("Dry Run is active! No changes will be made!")
+		glog.Infoln("Dry Run is active! No changes will be made!")
 	}
 	if *downloadFlag != "" {
 		cf.Location = *downloadFlag //hash
@@ -235,10 +217,10 @@ func extractCommandLine() {
 
 		//**** NEEEDS WORK!!****
 		//download the data
-		gobackup.Logger.Println(gobackup.DownloadKV(&cf, dat.TheMetadata[0].Hash, "test.txt"))
+		glog.Infoln(gobackup.DownloadKV(&cf, dat.TheMetadata[0].Hash, "test.txt"))
 
 		gobackup.DownloadKV(&cf, *downloadFlag, "download.file")
-		gobackup.Logger.Println("Downloaded a file!")
+		glog.Infoln("Downloaded a file!")
 		os.Exit(0)
 	}
 	if *getKeysFlag {
@@ -247,8 +229,8 @@ func extractCommandLine() {
 			gobackup.ValidateCF(&cf)
 		}
 		//get keys
-		gobackup.Logger.Println("Getting the keys and metadata!")
-		gobackup.Logger.Println(string(gobackup.GetKVkeys(&cf)))
+		glog.Infoln("Getting the keys and metadata!")
+		glog.Infoln(string(gobackup.GetKVkeys(&cf)))
 		os.Exit(0)
 	}
 
@@ -258,37 +240,35 @@ func extractCommandLine() {
 			gobackup.ValidateCF(&cf)
 		}
 		//get keys
-		gobackup.Logger.Println("Getting the keys and metadata!")
+		glog.Infoln("Getting the keys and metadata!")
 		jsonKeys := gobackup.GetKVkeys(&cf)
-		gobackup.Logger.Printf("jsonKeys:%s", jsonKeys)
+		glog.Infof("jsonKeys:%s", jsonKeys)
 
 		var extractedData gobackup.CloudflareResponse
 
 		json.Unmarshal(jsonKeys, &extractedData)
 
-		gobackup.Logger.Printf("Data extracted******: %v \n******", extractedData)
-		gobackup.Logger.Printf("success: %v\n", extractedData.Success)
+		glog.Infof("Data extracted******: %v \n******", extractedData)
+		glog.Infof("success: %v\n", extractedData.Success)
 		if len(extractedData.Result) != 0 {
-			if Verbose {
-				gobackup.Logger.Printf("size of result:%v\n", len(extractedData.Result))
-				gobackup.Logger.Printf("result: %v \n\n", extractedData.Result)
-			}
+			glog.V(1).Infof("size of result:%v\n", len(extractedData.Result))
+			glog.V(1).Infof("result: %v \n\n", extractedData.Result)
 
-			gobackup.Logger.Println("Adding extracted keys and metadata to data1 struct")
+			glog.Infoln("Adding extracted keys and metadata to data1 struct")
 			for i := 0; i < len(extractedData.Result); i++ {
 				//update the data struct
 				dat.TheMetadata = append(dat.TheMetadata, extractedData.Result[i].TheMetadata)
-				gobackup.Logger.Println("Added " + extractedData.Result[i].TheMetadata.FileName)
+				glog.Infoln("Added " + extractedData.Result[i].TheMetadata.FileName)
 			}
 
-			gobackup.Logger.Printf("Size of the data1 metadata array: %v\n", len(dat.TheMetadata))
-			gobackup.Logger.Printf("dat: %v\n\n\n", dat.TheMetadata)
+			glog.Infof("Size of the data1 metadata array: %v\n", len(dat.TheMetadata))
+			glog.Infof("dat: %v\n\n\n", dat.TheMetadata)
 			//			sort.Sort(gobackup.ByHash(dat.TheMetadata))
 
 			gobackup.DataFile2("data.dat", &dat)
 
 		} else {
-			gobackup.Logger.Println("Empty Result")
+			glog.Infoln("Empty Result")
 		}
 		os.Exit(0)
 	}
@@ -302,10 +282,10 @@ func searchData(hash string) bool {
 	file, err := os.Open("data.dat")
 	if err != nil {
 		if os.IsNotExist(err) {
-			gobackup.Logger.Print("data.dat file Does Not Exist. Creating a new data.dat file!")
+			glog.V(1).Info("data.dat file Does Not Exist. Creating a new data.dat file!")
 			file, err = os.Create("data.dat")
 			if !gobackup.CheckError(err, "searchData failed to create data.dat!") {
-				gobackup.Logger.Fatalln("Closing program!")
+				glog.Fatal("Closing program!")
 			}
 		} else {
 			gobackup.CheckError(err, "searchData failed opening file:data.dat")
@@ -352,7 +332,7 @@ func populateFK(dat *gobackup.DataContainer, meta *gobackup.Metadata, hashConten
 	metaFK.Hash = hashContentAndMeta
 	metaFK.ForeignKey = meta.Hash
 
-	gobackup.Logger.Println("CONTENT HASH FOUND, FOREIGN KEY NOT FOUND! Adding key:" + hashContentAndMeta + "-" + gobackup.GetMetadata(metaFK))
+	glog.Infoln("CONTENT HASH FOUND, FOREIGN KEY NOT FOUND! Adding key:" + hashContentAndMeta + "-" + gobackup.GetMetadata(metaFK))
 
 	//update the data struct with the foreign key
 	dat.TheMetadata = append(dat.TheMetadata, metaFK)
@@ -373,9 +353,7 @@ func populatePayloadAndMeta(dat *gobackup.DataContainer, meta *gobackup.Metadata
 	metaFK.ForeignKey = meta.Hash
 	metaFK.Hash = hashContentAndMeta
 
-	if gobackup.Debug {
-		gobackup.Logger.Println("NOT FOUND AND INCLUDING! " + meta.Hash + "-fkhash " + metaFK.ForeignKey + " metadata " + gobackup.GetMetadata(metaFK))
-	}
+	glog.V(2).Infoln("NOT FOUND AND INCLUDING! " + meta.Hash + "-fkhash " + metaFK.ForeignKey + " metadata " + gobackup.GetMetadata(metaFK))
 
 	//update the data struct with the content
 	dat.TheMetadata = append(dat.TheMetadata, *meta)
@@ -385,9 +363,7 @@ func populatePayloadAndMeta(dat *gobackup.DataContainer, meta *gobackup.Metadata
 
 	sort.Sort(gobackup.ByHash(dat.TheMetadata))
 
-	if gobackup.Debug {
-		gobackup.Logger.Printf("Checking For foreign key: %v\n*******end FK check", dat.TheMetadata)
-	}
+	glog.V(2).Infof("Checking For foreign key: %v\n*******end FK check", dat.TheMetadata)
 	//update the dat information (need to check if we exceed the capacities of the account, see TODO above)
 	dat.DataSize += meta.Size
 	dat.Count += 2
@@ -415,9 +391,7 @@ func main() {
 	//the filelist for backup
 	var fileList []string
 
-	if Verbose {
-		gobackup.Logger.Printf("CF LOCATION:%v", cf.Location)
-	}
+	glog.V(1).Infof("CF LOCATION:%v", cf.Location)
 
 	backupLocations := strings.Split(cf.Location, ",")
 
@@ -433,10 +407,10 @@ func main() {
 		hashContentAndMeta := gobackup.Md5fileAndMeta(f)
 
 		//debug info
-		if gobackup.Debug {
+		if glog.V(2) {
 			openFile, _ := os.Open(f)
 			contents, _ := ioutil.ReadAll(openFile)
-			gobackup.Logger.Printf("For Loop: (f:%v)(hash:%v)(contents:%v)", f, hash, string(contents))
+			glog.Infof("For Loop: (f:%v)(hash:%v)(contents:%v)", f, hash, string(contents))
 		}
 		//if content hash not found, need two entries 1, content hash, 2, content and meta hash
 		if !searchData(hash) {
@@ -447,28 +421,26 @@ func main() {
 			populateFK(&dat, &meta, hashContentAndMeta)
 
 		} else {
-			if Verbose {
-				gobackup.Logger.Println("FOUND AND EXCLUDING! " + f + " " + hash)
-			}
+			glog.V(1).Infoln("FOUND AND EXCLUDING! " + f + " " + hash)
 		}
 	} //for
 
 	//TheMetadata is empty, then there is no work left to be done. Exit program
 	if len(dat.TheMetadata) == 0 {
-		gobackup.Logger.Println("All files are up to date! Exiting!")
+		glog.Infoln("All files are up to date! Exiting!")
 		gobackup.DeleteLock()
 		os.Exit(0)
 	}
 
 	//information for user
-	gobackup.Logger.Printf("Backing up %v Files, Data Size: %v", dat.Count, dat.DataSize)
+	glog.Infof("Backing up %v Files, Data Size: %v", dat.Count, dat.DataSize)
 
 	//split the work and backup
 	backup()
 
 	//update the local data file
 	if gobackup.DryRun {
-		gobackup.Logger.Println("Dry Run dataFile2 is running!")
+		glog.Infoln("Dry Run dataFile2 is running!")
 		gobackup.DataFile2("", &dat)
 	} else {
 		gobackup.DataFile2("data.dat", &dat)
