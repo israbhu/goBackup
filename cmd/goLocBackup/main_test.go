@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -17,7 +18,7 @@ type MainSuite struct{}
 var _ = Suite(&MainSuite{})
 
 func (s *MainSuite) TestPopulatePayloadAndMeta(c *C) {
-	var dat gobackup.Data1
+	var dat gobackup.DataContainer
 	meta := gobackup.Metadata{
 		Permissions: "-rw-rw-rw-",
 		Filepath:    "foo/bar/kau/aux.txt",
@@ -37,4 +38,28 @@ func (s *MainSuite) TestPopulatePayloadAndMeta(c *C) {
 	// Sorted by Hash value
 	c.Check(metaFK, DeepEquals, dat.TheMetadata[0])
 	c.Check(meta, DeepEquals, dat.TheMetadata[1])
+}
+
+func (s *MainSuite) TestPopulateFK(c *C) {
+	var dat gobackup.DataContainer
+	meta := gobackup.Metadata{
+		Permissions: "-rw-rw-rw-",
+		Filepath:    "foo/bar/kau/aux.txt",
+		Hash:        "d41d8cd98f00b204e9800998ecf8427e",
+		ForeignKey:  "",
+		Mtime:       time.Time{},
+		Size:        0,
+	}
+
+	metaFK := meta
+	metaFK.Hash = "68b329da9893e34099c7d8ad5cb9c940" // TODO This is arbitrary
+	metaFK.ForeignKey = meta.Hash
+
+	populateFK(&dat, &meta, metaFK.Hash)
+
+	fmt.Printf("Length of data is:%v", fmt.Sprintln(len(dat.TheMetadata)))
+	c.Assert(dat.TheMetadata, HasLen, 1)
+	// Sorted by Hash value
+	c.Check(metaFK, DeepEquals, dat.TheMetadata[0])
+	//	c.Check(meta, DeepEquals, dat.TheMetadata[1])
 }

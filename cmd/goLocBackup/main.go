@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"flag"
-	"io"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -16,9 +16,9 @@ import (
 )
 
 //***************global variables*************
-var cf gobackup.Account //account credentials and preferences
-var dat gobackup.Data1  //local datastore tracking uploads and Metadata
-var Verbose bool        //flag for extra info output to console
+var cf gobackup.Account        //account credentials and preferences
+var dat gobackup.DataContainer //local datastore tracking uploads and Metadata
+var Verbose bool               //flag for extra info output to console
 
 //backs up the list of files
 //uploading the data should be the most time consuming portion of the program, so it will pushed into a go routine
@@ -68,25 +68,6 @@ func readTOML(file string) {
 
 }
 
-//write a toml file
-func writeTOML(file string) {
-	//get []byte from type cf
-	data, err := toml.Marshal(&cf)
-	if err != nil {
-		gobackup.Logger.Fatalf("writeTOML has encountered an error: %v", err)
-	}
-
-	//open file to write
-	writeFile, err := os.Open(file)
-	if err != nil {
-		gobackup.Logger.Fatalf("writeTOML has encountered an error: %v", err)
-	}
-
-	//write to file
-	io.WriteString(writeFile, string(data))
-	writeFile.Close()
-}
-
 //gets the size of a file called name
 func getFileSize(name string) int64 {
 	fi, err := os.Stat(name)
@@ -114,6 +95,15 @@ func mkdir(name string) {
 		err := os.Mkdir(name, 0755)
 		gobackup.CheckError(err, "")
 	}
+}
+
+func resolvePath(file string) string {
+	path, err := filepath.Abs(file)
+	if err != nil {
+		gobackup.Logger.Fatalf("resovePath has encountered an error: %v", err)
+	}
+
+	return path
 }
 
 //parameters
@@ -337,41 +327,55 @@ func searchData(hash string) bool {
 	return false
 }
 
-/*
-//create a toml file from a struct
-?? redundant, same as writeTOML
-func dataFile() {
-	doc, _ := toml.Marshal(&dat)
-
-	fmt.Println(string(doc))
-	fmt.Println(dat)
-	err := ioutil.WriteFile("data.dat", doc, 0644)
-	CheckError(err, "")
-	_, err = os.Lstat("data.dat")
-	CheckError(err, "")
-}
-*/
-
 //******* This struct contains the data needed to access the cloudflare infrastructure. It is stored on drive in the file preferences.toml *****
 type Account struct {
 	//cloudflare account information
 	Namespace, // namespace is called the "namespace id" on the cloudflare website for Workers KV
 	Account, // account is called "account id" on the cloudflare dashboard
 	Key, // key is also called the "global api key" on cloudflare at https://dash.cloudflare.com/profile/api-tokens
-	Token, // Token is used instead of the key and created on cloudflare at https://dash.cloudflare.com/profile/api-tokens
+	Token, // Token is used instead of the key (More secure than using Key) and created on cloudflare at https://dash.cloudflare.com/profile/api-tokens
 	Email, // email is the email associated with your cloudflare account
 	Data,
 	Location, //locations of the comma deliminated file and folders to be backed up
+	DownloadLocation, //default location to download data
 	Zip, //string to determine zip type. Currently none, zstandard, and zip
 	Backup string
 }
 
-func populatePayloadAndMeta(dat *gobackup.Data1, meta *gobackup.Metadata, hashContentAndMeta string) {
+//add a 0byte data entry to cloudflare workersKV.
+//The metadata of the file is uploaded to the hashContentAndMeta key.
+//It retains the correct metadata extracted from the file
+//The foreign key in the metadata contains the key to the content entry
+func populateFK(dat *gobackup.DataContainer, meta *gobackup.Metadata, hashContentAndMeta string) {
+
+	metaFK := *meta
+	metaFK.Hash = hashContentAndMeta
+	metaFK.ForeignKey = meta.Hash
+
+	gobackup.Logger.Println("CONTENT HASH FOUND, FOREIGN KEY NOT FOUND! Adding key:" + hashContentAndMeta + "-" + gobackup.GetMetadata(metaFK))
+
+	//update the data struct with the foreign key
+	dat.TheMetadata = append(dat.TheMetadata, metaFK)
+	dat.Count++
+
+	sort.Sort(gobackup.ByHash(dat.TheMetadata))
+}
+
+//add a the content data entry to cloudflare workersKV. Also add a 0 byte data entry
+//The metadata of the file is uploaded to the hashContentAndMeta key.
+//It retains the correct metadata extracted from the file
+//The foreign key in the metadata contains the key to the content entry
+func populatePayloadAndMeta(dat *gobackup.DataContainer, meta *gobackup.Metadata, hashContentAndMeta string) {
+
+	//TODO check on CF_MAX_UPLOAD and CF_MAX_DATA_UPLOAD, CF_MAX_DATA_FILE
+
 	metaFK := *meta
 	metaFK.ForeignKey = meta.Hash
 	metaFK.Hash = hashContentAndMeta
 
-	gobackup.Logger.Println("NOT FOUND AND INCLUDING! " + meta.Hash + "-fkhash " + metaFK.ForeignKey + " metadata " + gobackup.GetMetadata(metaFK))
+	if gobackup.Debug {
+		gobackup.Logger.Println("NOT FOUND AND INCLUDING! " + meta.Hash + "-fkhash " + metaFK.ForeignKey + " metadata " + gobackup.GetMetadata(metaFK))
+	}
 
 	//update the data struct with the content
 	dat.TheMetadata = append(dat.TheMetadata, *meta)
@@ -381,19 +385,23 @@ func populatePayloadAndMeta(dat *gobackup.Data1, meta *gobackup.Metadata, hashCo
 
 	sort.Sort(gobackup.ByHash(dat.TheMetadata))
 
-	gobackup.Logger.Printf("Checking For foreign key: %v\n*******end FK check", dat.TheMetadata)
-
+	if gobackup.Debug {
+		gobackup.Logger.Printf("Checking For foreign key: %v\n*******end FK check", dat.TheMetadata)
+	}
+	//update the dat information (need to check if we exceed the capacities of the account, see TODO above)
 	dat.DataSize += meta.Size
-	dat.Count += 1
+	dat.Count += 2
 }
 
 func main() {
+
 	//command line can overwrite the data from the preferences file
 	extractCommandLine()
 
 	//if no alternate prefences were in the command line, extract the default
 	if cf.Token == "" {
 		readTOML("preferences.toml")
+		fmt.Printf("preferences resolved to:%v", resolvePath("preferences.toml"))
 	}
 
 	//make sure the preferences are valid
@@ -435,18 +443,13 @@ func main() {
 			meta := gobackup.CreateMeta(f)
 			populatePayloadAndMeta(&dat, &meta, hashContentAndMeta)
 		} else if !searchData(hashContentAndMeta) { //content hash was found, so now check for content and meta hash
-			metaFK := gobackup.CreateMeta(f)
-			metaFK.Hash = hashContentAndMeta
-			metaFK.ForeignKey = hash
-			gobackup.Logger.Println("CONTENT HASH FOUND, FOREIGN KEY NOT FOUND! Adding key:" + hashContentAndMeta + "-" + gobackup.GetMetadata(metaFK))
-
-			//update the data struct with the foreign key
-			dat.TheMetadata = append(dat.TheMetadata, metaFK)
-
-			sort.Sort(gobackup.ByHash(dat.TheMetadata))
+			meta := gobackup.CreateMeta(f)
+			populateFK(&dat, &meta, hashContentAndMeta)
 
 		} else {
-			gobackup.Logger.Println("FOUND AND EXCLUDING! " + hash)
+			if Verbose {
+				gobackup.Logger.Println("FOUND AND EXCLUDING! " + f + " " + hash)
+			}
 		}
 	} //for
 
@@ -458,16 +461,12 @@ func main() {
 	}
 
 	//information for user
-	gobackup.Logger.Printf("Original File: %s, Data Size: %v, Data Count: %v", dat.TheMetadata[0].FileName, dat.DataSize, dat.Count)
+	gobackup.Logger.Printf("Backing up %v Files, Data Size: %v", dat.Count, dat.DataSize)
 
 	//split the work and backup
 	backup()
 
-	//download the data
-	//	fmt.Println(gobackup.DownloadKV(&cf, dat.TheMetadata[0].Hash, "test.txt"))
-
 	//update the local data file
-
 	if gobackup.DryRun {
 		gobackup.Logger.Println("Dry Run dataFile2 is running!")
 		gobackup.DataFile2("", &dat)

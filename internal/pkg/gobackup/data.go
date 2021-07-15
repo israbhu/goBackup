@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/md5"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -59,6 +58,7 @@ func Md5fileAndMeta(in string) string {
 	if err != nil {
 		Logger.Fatalf("while generating hash for file and metadata: %v", err)
 	}
+
 	result := fmt.Sprintf("%v%v", string(dat), CreateMeta(in))
 	Logger.Printf("CONTENT AND META******%v******\n\n", result)
 	data := md5.Sum([]byte(result))
@@ -66,7 +66,7 @@ func Md5fileAndMeta(in string) string {
 }
 
 //write data in a stream-like fashion
-func BuildData2(a *Data1) ([]byte, error) {
+func BuildData2(a *DataContainer) ([]byte, error) {
 	var result bytes.Buffer
 
 	for i := 0; i < len(a.TheMetadata); i++ {
@@ -81,8 +81,9 @@ func BuildData2(a *Data1) ([]byte, error) {
 	return result.Bytes(), nil
 }
 
+/*
 //write data to disk for a maximum of 100 MB
-func BuildData(a *Data1) string {
+func BuildData(a *DataContainer) string {
 	var sb strings.Builder
 
 	//start the array
@@ -154,9 +155,10 @@ func BuildData(a *Data1) string {
 	Logger.Println("SB =" + sb.String())
 	return sb.String()
 }
+*/
 
 //create a data file from data struct
-func DataFile2(file string, dat *Data1) {
+func DataFile2(file string, dat *DataContainer) {
 	var theFile io.ReadWriter
 	var err error
 
@@ -229,31 +231,6 @@ func GetMetadata(d Metadata) string {
 	//	return d.FileName + ":" + d.FileNum + ":" + d.Notes + ":" + d.Atime.String()
 }
 
-func (a Stream) MarshalJSON() ([]byte, error) {
-	//start of marshal
-	Logger.Println("Marshal is working!")
-	//convert from Stream type to string
-	filename := string(a)
-
-	file, err := os.Open(filename)
-	if err != nil {
-		Logger.Println(err)
-	}
-
-	fileContents, err := ioutil.ReadAll(file)
-	if err != nil {
-		Logger.Println(err)
-	}
-
-	//escape html
-	base64 := base64.StdEncoding.EncodeToString(fileContents)
-	base64 = "\"" + base64 + "\""
-
-	//dest, source
-	Logger.Printf("Length:%v", len(base64))
-	return []byte(base64), nil
-}
-
 type Stream string
 
 //this struct stores the Metadata that will be uploaded with each file
@@ -271,7 +248,7 @@ type Metadata struct {
 	File        string    `json:"file"`
 	Notes       string    `json:"notes"`
 	Permissions string    `json:"permissions"`
-	Filepath    string    `json:"filepath"`
+	Filepath    string    `json:"filepath"` //relative path to pref
 	Hash        string    `json:"hash"`
 	ForeignKey  string    `json:"foreignkey"`
 	FileNum     int       `json:"file_num"`
@@ -300,7 +277,7 @@ func (h ByHash) Less(i, j int) bool {
 //Redo: Datasize will be size of files
 //      remove hash, use only Metadata => add hash to Metadata
 //
-type Data1 struct {
+type DataContainer struct {
 	DataSize           int64 //keeps track of the byte size of the uploads
 	Count              int   //keeps track of the number of files
 	CF_MAX_UPLOAD      int   //max number of files for upload

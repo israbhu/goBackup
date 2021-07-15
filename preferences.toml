@@ -4,6 +4,8 @@
 #key is also called the "global api key" on cloudflare at https://dash.cloudflare.com/profile/api-tokens
 #token is used instead of the Key and configuted at https://dash.cloudflare.com/profile/api-tokens
 #email is the email associated with your cloudflare account
+#location are the files and folders to be backed up. All paths should be relative to the preferences file
+#downloadLocation is the default folder to download files. All paths should be relative to the preferences file
 account=""
 namespace=""
 email=""
@@ -12,5 +14,6 @@ token=""
 
 #backup directories location:folder,folder,folder
 location="."
+downloadLocation=""
 #format name,key,value;name,key,value
 data=""
