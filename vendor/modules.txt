@@ -1,3 +1,6 @@
+# github.com/golang/glog v0.0.0-20210429001901-424d2337a529
+## explicit
+github.com/golang/glog
 # github.com/golang/snappy v0.0.3
 github.com/golang/snappy
 # github.com/klauspost/compress v1.12.2

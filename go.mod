@@ -3,6 +3,7 @@ module github.com/israbhu/goBackup
 go 1.15
 
 require (
+	github.com/golang/glog v0.0.0-20210429001901-424d2337a529
 	github.com/klauspost/compress v1.12.2
 	github.com/kr/text v0.2.0 // indirect
 	github.com/pelletier/go-toml v1.9.0

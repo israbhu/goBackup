@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/klauspost/compress/zstd"
 )
 
@@ -45,7 +46,7 @@ func filePermissions(filename string, filemode uint32) {
 
 	err := os.Chmod(filename, os.FileMode(filemode))
 	if err != nil {
-		Logger.Println(err)
+		glog.Errorln(err)
 	}
 }
 
@@ -53,7 +54,7 @@ func fileOwner(filename string) {
 	// Change file ownership.
 	err := os.Chown(filename, os.Getuid(), os.Getgid())
 	if err != nil {
-		Logger.Println(err)
+		glog.Errorln(err)
 	}
 }
 func fileAccess(filename string, lastAccess time.Time, lastModify time.Time) {
@@ -63,7 +64,7 @@ func fileAccess(filename string, lastAccess time.Time, lastModify time.Time) {
 	//		lastModifyTime := addOneDayFromNow
 	err := os.Chtimes(filename, lastAccess, lastModify)
 	if err != nil {
-		Logger.Println(err)
+		glog.Errorln(err)
 	}
 }
 
@@ -73,23 +74,23 @@ func zStandardInit(filename string, pw *io.PipeWriter) {
 
 	enc, err := zstd.NewWriter(pw)
 	if err != nil {
-		Logger.Printf("newWriter error:%v", err)
+		glog.Errorf("newWriter error: %v", err)
 	}
 	defer enc.Close()
 
 	//open the file to be zipped
 	file, err := os.Open(filename)
 	if err != nil {
-		Logger.Printf("Error in zStandardInit: %v", err)
+		glog.Errorf("Error in zStandardInit: %v", err)
 	}
 	defer file.Close()
 
 	written, err := io.Copy(enc, file)
 	if err != nil {
-		Logger.Printf("io.Copy error:%v", err)
+		glog.Errorf("io.Copy error: %v", err)
 		enc.Close()
 	}
-	Logger.Printf("Successfully encoded bytes: %d  ", written)
+	glog.Infof("Successfully encoded bytes: %d  ", written)
 	//	return enc.Close()
 
 }
@@ -100,15 +101,15 @@ func copyFile(filename string, pr *io.PipeReader, pw *io.PipeWriter) {
 	//open the file to be zipped
 	file, err := os.Open(filename)
 	if err != nil {
-		Logger.Printf("Error in copyFile: %v", err)
+		glog.Errorf("Error in copyFile: %v", err)
 	}
 	defer file.Close()
 
 	written, err := io.Copy(pw, file)
 	if err != nil {
-		Logger.Printf("io.Copy error:%v", err)
+		glog.Errorf("io.Copy error:%v", err)
 	}
-	Logger.Printf("Successfully written:%v  ", written)
+	glog.Infof("Successfully written:%v  ", written)
 
 }
 
@@ -118,20 +119,20 @@ func zStandardDecompress(filename string, pr *io.PipeReader, pw *io.PipeWriter) 
 	//open the file to be zipped
 	file, err := os.Create(filename)
 	if err != nil {
-		Logger.Printf("Error in zStandardDecompress: %v", err)
+		glog.Errorf("Error in zStandardDecompress: %v", err)
 	}
 	defer file.Close()
 
 	dec, err := zstd.NewReader(pr)
 	if err != nil {
-		Logger.Printf("newReader error:%v", err)
+		glog.Errorf("newReader error:%v", err)
 	}
 	written, err := io.Copy(pw, dec)
 	if err != nil {
-		Logger.Printf("io.Copy error:%v", err)
+		glog.Errorf("io.Copy error:%v", err)
 		dec.Close()
 	}
-	Logger.Printf("Successfully written:%v  ", written)
+	glog.Infof("Successfully written:%v  ", written)
 }
 
 //create a zip using pipes
@@ -185,5 +186,5 @@ func zipInit(filename string, pr *io.PipeReader, pw *io.PipeWriter, errCh chan e
 		errCh <- err
 		return
 	}
-	Logger.Printf("Wrote %d Bytes\n", n)
+	glog.Infof("Wrote %d Bytes", n)
 }
