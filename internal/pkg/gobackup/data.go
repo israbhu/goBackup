@@ -201,23 +201,6 @@ func CreateMeta(file string) Metadata {
 
 	temp.FileName = file
 	temp.Hash = Md5file(file)
-	/*
-	   	//check if the path is relative
-	   	if isRelative(file) {
-	   		workingDirectory, _ := os.Getwd()
-	   //		volumeName := filepath.VolumeName(workingDirectory)
-
-	   		//if the path has a ., then need to modify the path
-	   		// you can do a .\ or .\dir or a ..\ or a ..\dir1\dir2
-	   		if strings.Contains(file, ".") {
-
-	   		} else {
-	   			temp.Filepath = workingDirectory+string(os.PathSeparator)+file
-	   		}
-	   	} else {
-	   		temp.Filepath = file
-	   	}
-	*/
 	temp.ForeignKey = ""
 	temp.FileNum = 0
 	temp.File = "f1o1"
@@ -228,8 +211,7 @@ func CreateMeta(file string) Metadata {
 }
 
 func GetMetadata(d Metadata) string {
-	return fmt.Sprintf("%v:%v:%v:%v", d.FileName, d.FileNum, d.Notes, d.Mtime)
-	//	return d.FileName + ":" + d.FileNum + ":" + d.Notes + ":" + d.Atime.String()
+	return fmt.Sprintf("%s:%d:%s:%d", d.FileName, d.FileNum, d.Notes, d.Mtime.Unix())
 }
 
 type Stream string
