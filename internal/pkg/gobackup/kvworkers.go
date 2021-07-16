@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/golang/glog"
@@ -18,33 +19,28 @@ var wg sync.WaitGroup
 var DryRun = false
 
 //validate that the preferences file has all the correct fields
-func ValidateCF(cloud *Account) bool {
-	//	Account, Data, Email, Namespace, Key, Token, Location, Zip, Backup string
-	pass := true
+func ValidateCF(cloud *Account) error {
+	msgs := []string{}
 
-	if DryRun {
-		return true
-	}
 	//check the required fields are not blank
 	if cloud.Email == "" {
-		glog.Fatalf("Email information is empty. Please edit your preferences.toml with the email associated with your cloudflare account")
-		pass = false
+		msgs = append(msgs, "Email information is empty. Please edit your preferences.toml with the email associated with your cloudflare account")
 	}
 	if cloud.Namespace == "" {
-		pass = false
-		glog.Fatalf("Namespace information is empty. Please edit your preferences.toml with valid info")
+		msgs = append(msgs, "Namespace information is empty. Please edit your preferences.toml with valid namespace")
 	}
 	if cloud.Account == "" {
-		pass = false
-		glog.Fatalf("Account information is empty. Please edit your preferences.toml with valid info")
+		msgs = append(msgs, "Account information is empty. Please edit your preferences.toml with valid account tag")
 	}
-	if cloud.Key == "" || cloud.Token == "" {
-		pass = false
-		glog.Fatalf("Key and Token are empty. Please edit your preferences.toml with a valid key or token. It is best practice to access your account through a least priviledged token.")
+	if cloud.Key == "" && cloud.Token == "" {
+		msgs = append(msgs, "Key and Token are empty. Please edit your preferences.toml with a valid key or token. It is best practice to access your account through a least priviledged token.")
 	}
-	//check the length of data
 
-	return pass
+	if len(msgs) > 0 {
+		return fmt.Errorf("Account Settings did not validate: \n%s", strings.Join(msgs, "\n"))
+	}
+
+	return nil
 }
 
 //get the stored keys on the account

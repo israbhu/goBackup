@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -150,7 +149,7 @@ func extractCommandLine() {
 	var accountFlag = flag.String("account", "", "Set the User Account instead of using any preferences file")
 	var nsFlag = flag.String("namespace", "", "Set the User's Namespace instead of using any preferences file")
 	var keyFlag = flag.String("key", "", "Set the Account Global Key instead of using any preferences file")
-	var tokenFlag = flag.String("token", "", "Set the Configured KV Workers key instead of using any preferences file")
+	flag.StringVar(&cf.Token, "token", "", "Set the Configured KV Workers key instead of using any preferences file")
 	var addLocationFlag = flag.String("addLocation", "", "Add these locations/files to backup in addition to those set in the preferences file")
 	var locationFlag = flag.String("location", "", "Use only these locations to backup")
 	//	var backupFlag = flag.String("backup", "", "Backup strategy")
@@ -169,8 +168,8 @@ func extractCommandLine() {
 	if *altPrefFlag != "" {
 		glog.Infoln("Alernate Preferences file detected, checking:")
 		readTOML(*altPrefFlag)
-		if !gobackup.ValidateCF(&cf) {
-			glog.Infof("%v has errors that need to be fixed!", *altPrefFlag)
+		if err := gobackup.ValidateCF(&cf); err != nil {
+			glog.Fatalf("'%s' has errors that need to be fixed!: %v", *altPrefFlag, err)
 		}
 	}
 
@@ -186,9 +185,6 @@ func extractCommandLine() {
 	}
 	if *keyFlag != "" {
 		cf.Key = *keyFlag
-	}
-	if *tokenFlag != "" {
-		cf.Token = *tokenFlag
 	}
 	if *locationFlag != "" { //replace the locations
 		cf.Location = *locationFlag
@@ -212,7 +208,9 @@ func extractCommandLine() {
 
 		if !gobackup.DryRun {
 			//check account
-			gobackup.ValidateCF(&cf)
+			if err := gobackup.ValidateCF(&cf); err != nil {
+				glog.Fatalf("%v", err)
+			}
 		}
 
 		//**** NEEEDS WORK!!****
@@ -226,7 +224,9 @@ func extractCommandLine() {
 	if *getKeysFlag {
 		if !gobackup.DryRun {
 			//check account
-			gobackup.ValidateCF(&cf)
+			if err := gobackup.ValidateCF(&cf); err != nil {
+				glog.Fatalf("%v", err)
+			}
 		}
 		//get keys
 		glog.Infoln("Getting the keys and metadata!")
@@ -237,7 +237,9 @@ func extractCommandLine() {
 	if *syncFlag {
 		if !gobackup.DryRun {
 			//check account
-			gobackup.ValidateCF(&cf)
+			if err := gobackup.ValidateCF(&cf); err != nil {
+				glog.Fatalf("%v", err)
+			}
 		}
 		//get keys
 		glog.Infoln("Getting the keys and metadata!")
@@ -377,12 +379,13 @@ func main() {
 	//if no alternate prefences were in the command line, extract the default
 	if cf.Token == "" {
 		readTOML("preferences.toml")
-		fmt.Printf("preferences resolved to:%v", resolvePath("preferences.toml"))
+		glog.Infof("preferences resolved to: %v", resolvePath("preferences.toml"))
 	}
 
 	//make sure the preferences are valid
-	//	validatePreferences()
-	gobackup.ValidateCF(&cf)
+	if err := gobackup.ValidateCF(&cf); err != nil {
+		glog.Fatalf("%v", err)
+	}
 
 	//prevent other local gobackup instances from altering critical files
 	gobackup.AddLock()
