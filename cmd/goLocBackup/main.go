@@ -15,6 +15,10 @@ import (
 	"github.com/pelletier/go-toml"
 )
 
+//***************Info*************************
+//	glog.V(1) represents verbose information, which is extra information non-essential to keep users updated
+//	glog.V(2) represents debug information, which is extra information useful to debug the application
+
 //***************global variables*************
 var cf gobackup.Account        //account credentials and preferences
 var dat gobackup.DataContainer //local datastore tracking uploads and Metadata
@@ -36,7 +40,9 @@ func readTOML(file string) {
 
 		glog.Infof("Reading in the toml file, %v", file)
 		dat, err := ioutil.ReadFile(file)
-		gobackup.CheckError(err, "")
+
+		//preferences file is not necessary, so only a warning given to user
+		gobackup.NoErrorFound(err, "readTOML has encountered an error while attempting to open the preferences file. Program will continue to run but may be unstable if all the necessary command line options are not used.")
 
 		astring := string(dat)
 
@@ -61,14 +67,6 @@ func readTOML(file string) {
 
 }
 
-//gets the size of a file called name
-func getFileSize(name string) int64 {
-	fi, err := os.Stat(name)
-	gobackup.CheckError(err, "")
-	// return the size in bytes
-	return fi.Size()
-}
-
 //create a new empty file named name
 func createEmptyFile(name string) {
 	if gobackup.FileExist(name) {
@@ -76,7 +74,7 @@ func createEmptyFile(name string) {
 	}
 
 	d := []byte("")
-	gobackup.CheckError(ioutil.WriteFile(name, d, 0644), "")
+	gobackup.NoErrorFound(ioutil.WriteFile(name, d, 0644), "")
 }
 
 //make a new directory called name
@@ -85,13 +83,14 @@ func mkdir(name string) {
 		return
 	} else {
 		err := os.Mkdir(name, 0755)
-		gobackup.CheckError(err, "")
+		gobackup.NoErrorFound(err, "")
 	}
 }
 
 func resolvePath(file string) string {
 	path, err := filepath.Abs(file)
 	if err != nil {
+		gobackup.DeleteLock()
 		glog.Fatalf("resovePath has encountered an error: %v", err)
 	}
 
@@ -113,7 +112,10 @@ func getFiles(name string, f []string) []string {
 	if gobackup.FileExist(name) {
 
 		stat, err := os.Stat(name)
-		gobackup.CheckError(err, "")
+		if !gobackup.NoErrorFound(err, "getFiles has encountered a problem with os.Stat("+name+")") {
+			glog.Info("getFiles will return without appending any files\n")
+			return f
+		}
 
 		//if it's a regular file, append and return f
 		if stat.Mode().IsRegular() {
@@ -124,9 +126,10 @@ func getFiles(name string, f []string) []string {
 
 	glog.V(2).Infof("getFiles name=**%v**\n", name)
 	err := filepath.Walk(name, func(path string, info os.FileInfo, err error) error {
-		if !gobackup.CheckError(err, "") {
+		if !gobackup.NoErrorFound(err, "") {
 			basedir, _ := os.Getwd()
 
+			gobackup.DeleteLock()
 			glog.Fatalf("Cannot find %v. Closing the program!", filepath.Join(basedir, path))
 		}
 		//remove .
@@ -135,8 +138,9 @@ func getFiles(name string, f []string) []string {
 		}
 		return nil
 	})
-	if !gobackup.CheckError(err, "") {
-		glog.Fatalf("Error found: %v", err)
+	if !gobackup.NoErrorFound(err, "The filepath.Walk encountered an error. Returning without modifying the file list") {
+		glog.
+			Infof("Error found: %v\n", err)
 	}
 	return f
 }
@@ -169,6 +173,7 @@ func extractCommandLine() {
 		glog.Infoln("Alernate Preferences file detected, checking:")
 		readTOML(*altPrefFlag)
 		if err := gobackup.ValidateCF(&cf); err != nil {
+			gobackup.DeleteLock()
 			glog.Fatalf("'%s' has errors that need to be fixed!: %v", *altPrefFlag, err)
 		}
 	}
@@ -209,6 +214,7 @@ func extractCommandLine() {
 		if !gobackup.DryRun {
 			//check account
 			if err := gobackup.ValidateCF(&cf); err != nil {
+				gobackup.DeleteLock()
 				glog.Fatalf("%v", err)
 			}
 		}
@@ -225,6 +231,7 @@ func extractCommandLine() {
 		if !gobackup.DryRun {
 			//check account
 			if err := gobackup.ValidateCF(&cf); err != nil {
+				gobackup.DeleteLock()
 				glog.Fatalf("%v", err)
 			}
 		}
@@ -238,6 +245,7 @@ func extractCommandLine() {
 		if !gobackup.DryRun {
 			//check account
 			if err := gobackup.ValidateCF(&cf); err != nil {
+				gobackup.DeleteLock()
 				glog.Fatalf("%v", err)
 			}
 		}
@@ -286,11 +294,11 @@ func searchData(hash string) bool {
 		if os.IsNotExist(err) {
 			glog.V(1).Info("data.dat file Does Not Exist. Creating a new data.dat file!")
 			file, err = os.Create("data.dat")
-			if !gobackup.CheckError(err, "searchData failed to create data.dat!") {
+			if !gobackup.NoErrorFound(err, "searchData failed to create data.dat!") {
 				glog.Fatal("Closing program!")
 			}
 		} else {
-			gobackup.CheckError(err, "searchData failed opening file:data.dat")
+			gobackup.NoErrorFound(err, "searchData failed opening file:data.dat")
 		}
 	}
 
@@ -384,6 +392,7 @@ func main() {
 
 	//make sure the preferences are valid
 	if err := gobackup.ValidateCF(&cf); err != nil {
+		gobackup.DeleteLock()
 		glog.Fatalf("%v", err)
 	}
 

@@ -18,13 +18,13 @@ func AddLock() {
 		glog.Fatalf("Data.dat has been locked for access. Please properly close the other program. If you wish to delete the lock manually, delete the %v file in the gobackup directory.", workingDirectory+string(os.PathSeparator)+"lock.pid")
 	} else {
 		lockfile, err := os.Create("lock.pid")
-		CheckError(err, "There was an error creating lock.pid")
+		NoErrorFound(err, "There was an error creating lock.pid")
 
 		defer lockfile.Close()
 
 		//write the process id into the file
 		_, err = io.WriteString(lockfile, fmt.Sprintf("%v", os.Getpid()))
-		CheckError(err, "Error writing the processid to the lock file!")
+		NoErrorFound(err, "Error writing the processid to the lock file!")
 	}
 }
 
@@ -33,7 +33,7 @@ func DeleteLock() {
 	glog.Infoln("Attempting to delete lock!")
 	if FileExist("lock.pid") {
 		err := os.Remove("lock.pid")
-		CheckError(err, "Error deleting lock.pid")
+		NoErrorFound(err, "Error deleting lock.pid")
 	}
 }
 
@@ -46,16 +46,16 @@ func FileExist(name string) bool {
 	return true
 }
 
-//checks the errors and delete lock********
-func CheckError(err error, message string) bool {
+//checks for errors
+//true means no errors were found
+//false means an error was found
+func NoErrorFound(err error, message string) bool {
 	if err != nil {
 		if message == "" {
 			glog.Infof("Error found! %v", err)
-			//			DeleteLock()
 			return false
 		} else {
 			glog.Infof(message+" %v", err)
-			//			DeleteLock()
 			return false
 		}
 	}

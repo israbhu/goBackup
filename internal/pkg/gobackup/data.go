@@ -10,44 +10,21 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/golang/glog"
 )
-
-//determine if a path is relative or not
-func isRelative(file string) bool {
-	workingDirectory, _ := os.Getwd()
-
-	volumeName := filepath.VolumeName(workingDirectory)
-
-	//if there's a volumename, it should not be relative
-	if strings.Contains(file, volumeName) {
-		return false
-	} else {
-		return true
-	}
-}
 
 //convert hex bytes into a string
 func hashToString(in []byte) string {
 	return hex.EncodeToString(in)
 }
 
-/*
-//run md5 hash on a string
-func md5string(a string) string {
-	data := md5.Sum([]byte(a))
-	return hashToString(data[:])
-}
-*/
-
 //run md5 hash on a file
 func Md5file(in string) string {
 	dat, err := ioutil.ReadFile(in)
 	if err != nil {
+		DeleteLock()
 		glog.Fatalf("md5 failed")
 	}
 	data := md5.Sum(dat)
@@ -58,6 +35,7 @@ func Md5file(in string) string {
 func Md5fileAndMeta(in string) string {
 	dat, err := ioutil.ReadFile(in)
 	if err != nil {
+		DeleteLock()
 		glog.Fatalf("while generating hash for file and metadata: %v", err)
 	}
 
@@ -84,82 +62,6 @@ func BuildData2(a *DataContainer) ([]byte, error) {
 	return result.Bytes(), nil
 }
 
-/*
-//write data to disk for a maximum of 100 MB
-func BuildData(a *DataContainer) string {
-	var sb strings.Builder
-
-	//start the array
-	sb.WriteString("[")
-
-	//if files are less than 100MB or less than 10000
-	buf := bytes.Buffer{}
-
-	//for loop
-	for i := 0; i < (len(a.TheMetadata) - 1); i++ {
-		d := a.TheMetadata[i]
-
-		file, err := os.Open(string(d.FileName))
-		if err != nil {
-			glog.Fatalf("searchData failed opening file:" + string(d.FileName))
-		}
-		defer file.Close()
-
-		body, err := ioutil.ReadAll(file)
-		if err != nil {
-			glog.Fatalln(err)
-		}
-
-		sb.WriteString("{\"key\":\"")
-		sb.WriteString(d.Hash)
-		sb.WriteString("\",\"value\":\"")
-		json.HTMLEscape(&buf, body)
-		sb.Write(buf.Bytes()) //compress and encrypt?
-		sb.WriteString("\",\"expiration_ttl\":")
-		sb.WriteString("60000")
-		sb.WriteString(",\"Metadata\":{\"")
-		sb.WriteString("The Metadata Key")
-		sb.WriteString("\":\"")
-		sb.WriteString(GetMetadata(d))
-		sb.WriteString("\"},\"base64\":false},")
-	}
-
-	d := a.TheMetadata[len(a.TheMetadata)-1]
-
-	file, err := os.Open(string(d.FileName))
-	if err != nil {
-		glog.Fatalf("searchData failed opening file:" + string(d.FileName))
-	}
-	defer file.Close()
-
-	body, err := ioutil.ReadAll(file)
-	if err != nil {
-		glog.Fatalln(err)
-	}
-
-	sb.WriteString("{\"key\":\"")
-	sb.WriteString(d.Hash)
-	sb.WriteString("\",\"value\":\"")
-	escaped := strings.ReplaceAll(string(body), `"`, `\"`)
-	escaped = strings.ReplaceAll(escaped, `\`, `\\`)
-	escaped = strings.ReplaceAll(escaped, "`", "\\`")
-	sb.WriteString(escaped)
-	sb.WriteString("\",\"expiration_ttl\":")
-	sb.WriteString("6000")
-	sb.WriteString(",\"Metadata\":{\"")
-	sb.WriteString("The Metadata Key")
-	sb.WriteString("\":\"")
-	sb.WriteString(GetMetadata(d))
-	sb.WriteString("\"},\"base64\":false}")
-
-	//end the array
-	sb.WriteString("]")
-
-	glog.Infoln("SB =" + sb.String())
-	return sb.String()
-}
-*/
-
 //create a data file from data struct
 func DataFile2(file string, dat *DataContainer) {
 	var theFile io.ReadWriter
@@ -172,6 +74,7 @@ func DataFile2(file string, dat *DataContainer) {
 		glog.Infoln("Opening the data.dat file!")
 		theFile, err = os.OpenFile(file, os.O_APPEND|os.O_CREATE, 0644)
 		if err != nil {
+			DeleteLock()
 			glog.Fatalf("problem opening file '%s': %v", file, err)
 		}
 	}
@@ -180,7 +83,7 @@ func DataFile2(file string, dat *DataContainer) {
 	for i, data := range dat.TheMetadata {
 		//added a spacer between the hash and filename
 		_, err := datawriter.WriteString(dat.TheMetadata[i].Hash + ":" + GetMetadata(data) + "\n")
-		CheckError(err, "Error in Datafile2!")
+		NoErrorFound(err, "Error in Datafile2!")
 
 		glog.V(1).Infof("Adding item:%v and data:%v", i, data)
 	}
