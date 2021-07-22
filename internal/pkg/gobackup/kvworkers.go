@@ -99,6 +99,7 @@ func GetKVkeys(cf *Account) []byte {
 	//verbose information showing the "response" json data
 	//name and metadata fields
 	glog.V(1).Infoln("Response Body: " + string(body))
+	//	fmt.Println("Response Body: " + string(body))
 
 	return body
 }
@@ -362,7 +363,9 @@ func UploadKV(cf *Account, meta Metadata) bool {
 }
 
 //implementation of the workers kv download
-func DownloadKV(cf *Account, dataKey string, filepath string) bool {
+//dataKey should be a unique md5 key used as the primary key on cloudflare
+//filepath is the path to create the downloaded file
+func DownloadKV(cf *Account, dataKey string, downloadPath string) bool {
 
 	client := &http.Client{}
 
@@ -404,7 +407,7 @@ func DownloadKV(cf *Account, dataKey string, filepath string) bool {
 
 	defer resp.Body.Close()
 
-	out, err := os.Create(filepath)
+	out, err := os.Create(downloadPath)
 	if err != nil {
 		glog.Infoln(err)
 	}

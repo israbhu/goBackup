@@ -117,6 +117,16 @@ func GetMetadata(d Metadata) string {
 	return fmt.Sprintf("%s:%d:%s:%d", d.FileName, d.FileNum, d.Notes, d.Mtime.Unix())
 }
 
+//searches the database and returns the results as a string
+//method describes the search method, by name, by filepath, etc
+//key describes what the search looks for
+//order will reorder the results asc (ascending), desc (descending), none (as entered)
+//result allows you to add formatting to the result string
+//the result string should be able to be outputted to standard out or a file to be used in combination with the download option
+func searchLocalDatabase(method string, key string, order string, result string) string {
+	return ""
+}
+
 type Stream string
 
 //this struct stores the Metadata that will be uploaded with each file
