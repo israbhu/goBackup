@@ -166,6 +166,7 @@ func extractCommandLine() {
 	var syncFlag = flag.Bool("sync", false, "Download the keys and metadata from cloud and overwrite the local database")
 	//	var forcePrefFlag = flag.String("f", "", "ignore the lock")
 
+	flag.Set("logtostderr", "true")
 	flag.Parse()
 	glog.Infoln("Checking flags!")
 
