@@ -22,7 +22,19 @@ import (
 //***************global variables*************
 var cf gobackup.Account        //account credentials and preferences
 var dat gobackup.DataContainer //local datastore tracking uploads and Metadata
+var preferences string         //the location of preferences file
+var homeDirectory string       //use this location to resolve pathing instead of the PWD
 
+/* NOTES *
+filepath == filepath same file
+base filepath == folder (filepath minus filename)
+
+downloading a folder = get all files with same base filepath
+downloading a folder and all subfolders = get all files that start with the same base filepath
+download a specific file (use the listAllFiles to find the hash?)
+
+
+*/
 //backs up the list of files
 //uploading the data should be the most time consuming portion of the program, so it will pushed into a go routine
 func backup() {
@@ -67,6 +79,21 @@ func readTOML(file string) {
 
 }
 
+//write to a toml file
+func writeTOML(file string, data *gobackup.DataContainer) {
+	doc, _ := toml.Marshal(data)
+
+	err := ioutil.WriteFile(file, doc, 0644)
+	if err != nil {
+		glog.Fatalf("Error with writeTOML! Cannot write the file %v %v", file, err)
+	}
+	_, err = os.Lstat(file)
+	if err != nil {
+		glog.Fatalf("Error with writeTOML! Cannot stat the file: %v %v", file, err)
+	}
+
+}
+
 //create a new empty file named name
 func createEmptyFile(name string) {
 	if gobackup.FileExist(name) {
@@ -87,11 +114,24 @@ func mkdir(name string) {
 	}
 }
 
+//resolve the directory path
 func resolvePath(file string) string {
-	path, err := filepath.Abs(file)
-	if err != nil {
-		gobackup.DeleteLock()
-		glog.Fatalf("resovePath has encountered an error: %v", err)
+
+	//TODO check for a home directory setting to resolve an alternate pathway than present working directory
+
+	var path string // the resolved path
+	var err error
+
+	if homeDirectory != "" {
+		os.Chdir(homeDirectory) //change pwd
+		path, err = filepath.Abs(file)
+	} else {
+		//uses PWD
+		path, err = filepath.Abs(file)
+		if err != nil {
+			gobackup.DeleteLock()
+			glog.Fatalf("resovePath has encountered an error: %v", err)
+		}
 	}
 
 	return path
@@ -145,6 +185,13 @@ func getFiles(name string, f []string) []string {
 	return f
 }
 
+func save(file string) {
+	if file != "" {
+
+	}
+
+}
+
 //process the command line commands
 //yes, email, Account, Data, Email, Namespace, Key, Token, Location string
 //backup strategy, zip, encrypt, verbose, sync, list data, alt pref, no pref
@@ -164,6 +211,12 @@ func extractCommandLine() {
 	var dryFlag = flag.Bool("dry", false, "Dry run. Goes through all the steps, but it makes no changes on disk or network")
 	var getKeysFlag = flag.Bool("keys", false, "Get the keys and metadata from cloudflare")
 	var syncFlag = flag.Bool("sync", false, "Download the keys and metadata from cloud and overwrite the local database")
+	var searchFlag = flag.String("search", "", "Search the local database and print to screen")
+	var listAllFlag = flag.String("listAllFiles", "", "List all files in the local database")
+	var listRecentFlag = flag.String("listRecentFiles", "", "List most recent files in the local database")
+	var homeFlag = flag.String("home", "", "Change your home directory. All relative paths based on home directory")
+	var saveFlag = flag.String("save", "", "save the current data queue to the save file")
+
 	//	var forcePrefFlag = flag.String("f", "", "ignore the lock")
 
 	flag.Set("logtostderr", "true")
@@ -171,15 +224,100 @@ func extractCommandLine() {
 	glog.Infoln("Checking flags!")
 
 	if *altPrefFlag != "" {
-		glog.Infoln("Alernate Preferences file detected, checking:")
+		glog.Infoln("Alternate Preferences file detected, checking:")
+		preferences = *altPrefFlag
+
 		readTOML(*altPrefFlag)
 		if err := gobackup.ValidateCF(&cf); err != nil {
 			gobackup.DeleteLock()
-			glog.Fatalf("'%s' has errors that need to be fixed!: %v", *altPrefFlag, err)
+			glog.Fatalf("The preferences file at '%s' has errors that need to be fixed!: %v", resolvePath(*altPrefFlag), err)
 		}
 	}
 
 	//overwrite over any preferences file
+	if *homeFlag != "" {
+		glog.Info("Setting home directory to " + *homeFlag)
+		homeDirectory = *homeFlag
+	}
+	if *searchFlag != "" {
+		gobackup.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result")
+
+		//		fmt.Println("Displaying dat")
+		//		fmt.Println(dat)
+
+		glog.Info("Displaying sorted dat")
+		sort.Sort(gobackup.ByFilepath(dat.TheMetadata))
+
+		glog.Info(dat)
+		gobackup.DeleteLock()
+
+		//save the data container to the file indicated by *saveFlag
+		writeTOML(*saveFlag, &dat)
+
+		os.Exit(0)
+	}
+
+	if *listAllFlag != "" {
+		gobackup.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result")
+
+		glog.Info("Displaying sorted dat")
+		sort.Sort(gobackup.ByFilepath(dat.TheMetadata))
+
+		glog.Info("Listing Files by key, filename, and last modified time")
+		for i := 0; i < len(dat.TheMetadata); i++ {
+			//			glog.Info(dat.TheMetadata[i].Hash + " " + dat.TheMetadata[i].FileName + " " + dat.TheMetadata[i].Mtime.String())
+			glog.Info(dat.TheMetadata[i].Hash + " " + dat.TheMetadata[i].FileName + " " + dat.TheMetadata[i].Filepath + " " + dat.TheMetadata[i].Mtime.String())
+		}
+
+		//save the data container to the file indicated by *saveFlag
+		writeTOML(*saveFlag, &dat)
+
+		//		fmt.Println(dat)
+		gobackup.DeleteLock()
+		os.Exit(0)
+	}
+
+	if *listRecentFlag != "" {
+		gobackup.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result")
+
+		glog.Info("Displaying sorted dat")
+		sort.Sort(gobackup.ByFilepath(dat.TheMetadata))
+
+		glog.Infof("%v metadata in the container after sorting\n", len(dat.TheMetadata))
+
+		var prune []gobackup.Metadata
+
+		//prune the old files
+		for i := 0; i < len(dat.TheMetadata)-1; i++ {
+			prune = append(prune, dat.TheMetadata[i])
+
+			test := dat.TheMetadata[i].FileName
+
+			//TODO decide if we need filePath, fileName, or something else
+			//prune out any similar filepaths
+			for test == dat.TheMetadata[i+1].FileName && i < len(dat.TheMetadata)-2 {
+				glog.Infof("test%v:%v vs test%v:%v", i, test, i+1, dat.TheMetadata[i+1].FileName)
+				i++
+			}
+		}
+
+		dat.TheMetadata = prune
+
+		glog.Infof("%v metadata in the container after pruning\n", len(dat.TheMetadata))
+
+		glog.Info("Listing Files by key, filename, and last modified time")
+		for i := 0; i < len(dat.TheMetadata); i++ {
+			glog.Info(dat.TheMetadata[i].Hash + " " + dat.TheMetadata[i].FileName + " " + dat.TheMetadata[i].Filepath + " " + dat.TheMetadata[i].Mtime.String())
+		}
+
+		//save the data container to the file indicated by *saveFlag
+		writeTOML(*saveFlag, &dat)
+
+		//		fmt.Println(dat)
+		gobackup.DeleteLock()
+		os.Exit(0)
+	}
+
 	if *emailFlag != "" {
 		cf.Email = *emailFlag
 	}
@@ -343,7 +481,7 @@ func populateFK(dat *gobackup.DataContainer, meta *gobackup.Metadata, hashConten
 	metaFK.Hash = hashContentAndMeta
 	metaFK.ForeignKey = meta.Hash
 
-	glog.Infoln("CONTENT HASH FOUND, FOREIGN KEY NOT FOUND! Adding key:" + hashContentAndMeta + "-" + gobackup.GetMetadata(metaFK))
+	glog.Infoln("CONTENT HASH FOUND, FOREIGN KEY NOT FOUND! Adding key:" + hashContentAndMeta + "-" + gobackup.MetadataToString(metaFK))
 
 	//update the data struct with the foreign key
 	dat.TheMetadata = append(dat.TheMetadata, metaFK)
@@ -364,7 +502,7 @@ func populatePayloadAndMeta(dat *gobackup.DataContainer, meta *gobackup.Metadata
 	metaFK.ForeignKey = meta.Hash
 	metaFK.Hash = hashContentAndMeta
 
-	glog.V(2).Infoln("NOT FOUND AND INCLUDING! " + meta.Hash + "-fkhash " + metaFK.ForeignKey + " metadata " + gobackup.GetMetadata(metaFK))
+	glog.V(2).Infoln("NOT FOUND AND INCLUDING! " + meta.Hash + "-fkhash " + metaFK.ForeignKey + " metadata " + gobackup.MetadataToString(metaFK))
 
 	//update the data struct with the content
 	dat.TheMetadata = append(dat.TheMetadata, *meta)
@@ -385,7 +523,7 @@ func main() {
 	//command line can overwrite the data from the preferences file
 	extractCommandLine()
 
-	//if no alternate prefences were in the command line, extract the default
+	//if no alternate preferences were in the command line, extract the default
 	if cf.Token == "" {
 		readTOML("preferences.toml")
 		glog.Infof("preferences resolved to: %v", resolvePath("preferences.toml"))
@@ -394,7 +532,9 @@ func main() {
 	//make sure the preferences are valid
 	if err := gobackup.ValidateCF(&cf); err != nil {
 		gobackup.DeleteLock()
-		glog.Fatalf("%v", err)
+		glog.Fatalf("Your preferences files located at %v has not passed the validation stage."+
+			" Please edit your preferences with valid values or use additional commandline options"+
+			" for the appropriate values. The errors are: %v", resolvePath(preferences), err)
 	}
 
 	//prevent other local gobackup instances from altering critical files

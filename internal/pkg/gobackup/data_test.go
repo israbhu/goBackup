@@ -22,6 +22,6 @@ func (s *DataSuite) TestGetMetadata(c *C) {
 		Notes:    "foobar notes",
 		Mtime:    time.Unix(1626394466, 0),
 	}
-	got := GetMetadata(md)
+	got := MetadataToString(md)
 	c.Check(got, Equals, want)
 }
