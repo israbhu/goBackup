@@ -35,7 +35,7 @@ func ValidateCF(cloud *Account) error {
 	if cloud.Key == "" && cloud.Token == "" {
 		msgs = append(msgs, "Key and Token are empty. Please edit your preferences.toml with a valid key or token. It is best practice to access your account through a least priviledged token.")
 	}
-	if cloud.homeDirectory == "" {
+	if cloud.HomeDirectory == "" {
 		glog.Info("Your Home Directory was not set. Your relative paths will use your current directory, which may not work as intended.")
 	}
 
@@ -436,7 +436,7 @@ type Account struct {
 	// Token is used instead of the key and created on cloudflare at https://dash.cloudflare.com/profile/api-tokens
 	// email is the email associated with your cloudflare account
 
-	Account, Data, Email, Namespace, Key, Token, Location, Zip, Backup, homeDirectory string
+	Account, Data, Email, Namespace, Key, Token, Location, Zip, Backup, HomeDirectory string
 }
 
 type CloudflareResponse struct {
