@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -47,11 +48,12 @@ func backup() {
 //read from a toml file
 //check that the file exists since the function can be called from a commandline argument
 func readTOML(file string) {
+	path := gobackup.MustMakeCanonicalPath(file)
 
-	if gobackup.FileExist(file) {
+	if _, err := os.Stat(path); err == nil {
 
-		glog.Infof("Reading in the toml file, %v", file)
-		dat, err := ioutil.ReadFile(file)
+		glog.Infof("Reading in the toml file, %v", path)
+		dat, err := ioutil.ReadFile(path)
 
 		//preferences file is not necessary, so only a warning given to user
 		gobackup.NoErrorFound(err, "readTOML has encountered an error while attempting to open the preferences file. Program will continue to run but may be unstable if all the necessary command line options are not used.")
@@ -62,19 +64,17 @@ func readTOML(file string) {
 
 		if file == "data.dat" {
 			toml.Unmarshal(doc2, &dat)
-			glog.V(1).Infoln("Reading in the data file:" + file)
+			glog.V(1).Infof("Reading in the data file: %s", path)
 			glog.V(1).Infoln(dat)
 
 		} else {
 			toml.Unmarshal(doc2, &cf)
 
-			glog.V(1).Infoln("Reading in the preference file:" + file)
-			glog.V(1).Infoln(cf)
+			glog.V(1).Infof("Reading in the preference file: %s", path)
+			glog.V(1).Infof("%+v", cf)
 		}
 	} else { //the file does not exist
-		workingDirectory, _ := os.Getwd()
-
-		glog.Warningf("The file '%s' does not exist! We strongly recommend creating the file for higher efficiency.", filepath.Join(workingDirectory, file))
+		glog.Warningf("The file '%s' does not exist! We strongly recommend creating the file for higher efficiency.", path)
 	} //else
 
 }
@@ -96,21 +96,23 @@ func writeTOML(file string, data *gobackup.DataContainer) {
 
 //create a new empty file named name
 func createEmptyFile(name string) {
-	if gobackup.FileExist(name) {
+	path := gobackup.MustMakeCanonicalPath(name)
+	if _, err := os.Stat(path); err == nil {
 		return
 	}
 
 	d := []byte("")
-	gobackup.NoErrorFound(ioutil.WriteFile(name, d, 0644), "")
+	gobackup.NoErrorFound(ioutil.WriteFile(path, d, 0644), "")
 }
 
 //make a new directory called name
 func mkdir(name string) {
-	if gobackup.FileExist(name) {
+	path := gobackup.MustMakeCanonicalPath(name)
+	if _, err := os.Stat(path); err == nil {
 		return
 	} else {
-		err := os.Mkdir(name, 0755)
-		gobackup.NoErrorFound(err, "")
+		err := os.Mkdir(path, 0755)
+		gobackup.NoErrorFound(err, fmt.Sprintf("Could not make directory '%s'", path))
 	}
 }
 
@@ -149,19 +151,17 @@ func getFiles(name string, f []string) []string {
 		name = "."
 	}
 
-	if gobackup.FileExist(name) {
-
-		stat, err := os.Stat(name)
-		if !gobackup.NoErrorFound(err, "getFiles has encountered a problem with os.Stat("+name+")") {
-			glog.Info("getFiles will return without appending any files\n")
-			return f
-		}
-
+	path := gobackup.MustMakeCanonicalPath(name)
+	if fi, err := os.Stat(path); err == nil {
 		//if it's a regular file, append and return f
-		if stat.Mode().IsRegular() {
-			f = append(f, name)
+		if fi.Mode().IsRegular() {
+			f = append(f, path)
 			return f
 		}
+	} else {
+		glog.Errorf("getFiles has encountered a problem with os.Stat(%s): %v", name, err)
+		glog.Info("getFiles will return without appending any files")
+		return f
 	}
 
 	glog.V(2).Infof("getFiles name=**%v**\n", name)
