@@ -11,11 +11,10 @@ import (
 //creates a lock file for data.dat
 func AddLock() {
 	//if exist
-	if FileExist("lock.pid") {
-
-		workingDirectory, _ := os.Getwd()
+	if fi, err := os.Stat("lock.pid"); err == nil {
 		//add nuances here
-		glog.Fatalf("Data.dat has been locked for access. Please properly close the other program. If you wish to delete the lock manually, delete the %v file in the gobackup directory.", workingDirectory+string(os.PathSeparator)+"lock.pid")
+		p := MustMakeCanonicalPath(fi.Name())
+		glog.Fatalf("Data.dat has been locked for access. Please properly close the other program. If you wish to delete the lock manually, delete %s.", p)
 	} else {
 		lockfile, err := os.Create("lock.pid")
 		NoErrorFound(err, "There was an error creating lock.pid")
@@ -31,19 +30,10 @@ func AddLock() {
 //creates a lock file for data.dat
 func DeleteLock() {
 	glog.Infoln("Attempting to delete lock!")
-	if FileExist("lock.pid") {
+	if _, err := os.Stat("lock.pid"); err == nil {
 		err := os.Remove("lock.pid")
 		NoErrorFound(err, "Error deleting lock.pid")
 	}
-}
-
-//check if a file called name exists
-func FileExist(name string) bool {
-	if _, err := os.Stat(name); os.IsNotExist(err) {
-		//		glog.Fatalf("The file at %v does not exist", name)
-		return false
-	}
-	return true
 }
 
 //checks for errors

@@ -2,6 +2,7 @@ package gobackup
 
 import (
 	"bufio"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -324,3 +325,21 @@ type DataContainer struct {
 
 //sync to online => pull Metadata from cloud and rebuild
 //sync to drive  => pull Metadata from cloud and check against the drive database, reupload anything missing
+
+// MustMakeCanonicalPath returns an absolute path for the given path, where
+// symlinks are evaluated and the path is cleaned according to filepath.Clean.
+// Any error is fatal.
+func MustMakeCanonicalPath(path string) string {
+	// eval symlink
+	pathNoSym, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		glog.Fatalf("While evaluating symlinks for '%s': %v", path, err)
+	}
+	// abs
+	ret, err := filepath.Abs(pathNoSym)
+	if err != nil {
+		glog.Fatalf("While getting absolute path for '%s': %v", pathNoSym, err)
+	}
+
+	return ret
+}
