@@ -116,29 +116,6 @@ func mkdir(name string) {
 	}
 }
 
-//resolve the directory path
-func resolvePath(file string) string {
-
-	//TODO check for a home directory setting to resolve an alternate pathway than present working directory
-
-	var path string // the resolved path
-	var err error
-
-	if homeDirectory != "" {
-		os.Chdir(homeDirectory) //change pwd
-		path, err = filepath.Abs(file)
-	} else {
-		//uses PWD
-		path, err = filepath.Abs(file)
-		if err != nil {
-			gobackup.DeleteLock()
-			glog.Fatalf("resovePath has encountered an error: %v", err)
-		}
-	}
-
-	return path
-}
-
 //parameters
 //name is the drive path to a folder
 //f is a slice that contains all of the accumulated files
@@ -230,7 +207,7 @@ func extractCommandLine() {
 		readTOML(*altPrefFlag)
 		if err := gobackup.ValidateCF(&cf); err != nil {
 			gobackup.DeleteLock()
-			glog.Fatalf("The preferences file at '%s' has errors that need to be fixed!: %v", resolvePath(*altPrefFlag), err)
+			glog.Fatalf("The preferences file at '%s' has errors that need to be fixed!: %v", gobackup.MustMakeCanonicalPath(*altPrefFlag), err)
 		}
 	}
 
@@ -526,15 +503,22 @@ func main() {
 	//if no alternate preferences were in the command line, extract the default
 	if cf.Token == "" {
 		readTOML("preferences.toml")
-		glog.Infof("preferences resolved to: %v", resolvePath("preferences.toml"))
+		glog.Infof("preferences resolved to: %v", gobackup.MustMakeCanonicalPath("preferences.toml"))
 	}
+
+	pref, _ := filepath.Abs(preferences)
+
+	gobackup.ChangeHomeDirectory(&cf)
+	fmt.Printf("Checking that directory is below home! Directory:%v result:%t", pref, gobackup.CheckPath(pref, &cf))
+
+	fmt.Println("Checking the canonical path:" + gobackup.MustMakeCanonicalPath("test.txt"))
 
 	//make sure the preferences are valid
 	if err := gobackup.ValidateCF(&cf); err != nil {
 		gobackup.DeleteLock()
 		glog.Fatalf("Your preferences files located at %v has not passed the validation stage."+
 			" Please edit your preferences with valid values or use additional commandline options"+
-			" for the appropriate values. The errors are: %v", resolvePath(preferences), err)
+			" for the appropriate values. The errors are: %v", gobackup.MustMakeCanonicalPath(preferences), err)
 	}
 
 	//prevent other local gobackup instances from altering critical files
@@ -573,7 +557,7 @@ func main() {
 			meta := gobackup.CreateMeta(f)
 			populateFK(&dat, &meta, hashContentAndMeta)
 
-		} else {
+		} else { //all Hashes for the file were in the local database. Exclude from uploading
 			glog.V(1).Infoln("FOUND AND EXCLUDING! " + f + " " + hash)
 		}
 	} //for

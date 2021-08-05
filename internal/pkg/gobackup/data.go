@@ -333,8 +333,10 @@ func MustMakeCanonicalPath(path string) string {
 	// eval symlink
 	pathNoSym, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		glog.Fatalf("While evaluating symlinks for '%s': %v", path, err)
+		ret, err := filepath.Abs(path)
+		glog.Fatalf("While evaluating symlinks for '%s': %v with absolute pathing:%v", path, err, ret)
 	}
+
 	// abs
 	ret, err := filepath.Abs(pathNoSym)
 	if err != nil {
@@ -342,4 +344,50 @@ func MustMakeCanonicalPath(path string) string {
 	}
 
 	return ret
+}
+
+//attempt to change the current working directory as follows:
+//to the home directory in preferences, detected home directory, or allow to use CWD
+func ChangeHomeDirectory(cf *Account) {
+	if cf.HomeDirectory != "" {
+		glog.V(1).Info("CF Homedirectory found! Setting home path to:" + cf.HomeDirectory)
+		os.Chdir(cf.HomeDirectory)
+	} else {
+		test, err := os.UserHomeDir()
+		if err != nil {
+			glog.V(1).Info("CF Homedirectory not found. User Home directory not found. Using Current directory.")
+		}
+		glog.V(1).Info("User home directory found! Setting home path to:" + test)
+		os.Chdir(test)
+	}
+}
+
+//check that the path is not above the home directory
+func CheckPath(absolutepath string, cf *Account) bool {
+	//if cf.HomeDirectory is set
+	fmt.Println("checking path for:" + absolutepath)
+	if cf.HomeDirectory != "" {
+		if strings.HasPrefix(absolutepath, cf.HomeDirectory) {
+			fmt.Println("cf.HomeDirectory")
+			return true
+		} else {
+			return false
+		}
+	} else if ret, err := os.UserHomeDir(); err != nil { //otherwise try to get the user home directory
+		if strings.HasPrefix(absolutepath, ret) {
+			fmt.Println("os.UserHomeDir")
+			return true
+		} else {
+			return false
+		}
+	} else if ret, err := os.Getwd(); err != nil { //otherwise try and use current directory
+		if strings.HasPrefix(absolutepath, ret) {
+			fmt.Println("current working directory")
+			return true
+		} else {
+			return false
+		}
+	} else { //everything fails, return false
+		return false
+	}
 }
