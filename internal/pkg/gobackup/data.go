@@ -326,24 +326,23 @@ type DataContainer struct {
 //sync to online => pull Metadata from cloud and rebuild
 //sync to drive  => pull Metadata from cloud and check against the drive database, reupload anything missing
 
-// MustMakeCanonicalPath returns an absolute path for the given path, where
+// MakeCanonicalPath returns an absolute path for the given path, where
 // symlinks are evaluated and the path is cleaned according to filepath.Clean.
-// Any error is fatal.
-func MustMakeCanonicalPath(path string) string {
-	// eval symlink
-	pathNoSym, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		ret, err := filepath.Abs(path)
-		glog.Fatalf("While evaluating symlinks for '%s': %v with absolute pathing:%v", path, err, ret)
-	}
-
+// The returned path is empty when error is not nil.
+func MakeCanonicalPath(path string) (string, error) {
 	// abs
-	ret, err := filepath.Abs(pathNoSym)
+	abs, err := filepath.Abs(path)
 	if err != nil {
-		glog.Fatalf("While getting absolute path for '%s': %v", pathNoSym, err)
+		return "", fmt.Errorf("While getting absolute path for '%s': %v", path, err)
 	}
 
-	return ret
+	// eval symlink
+	ret, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", fmt.Errorf("While evaluating symlinks for '%s': %v", abs, err)
+	}
+
+	return ret, nil
 }
 
 //attempt to change the current working directory as follows:

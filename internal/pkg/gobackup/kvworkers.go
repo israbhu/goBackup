@@ -18,25 +18,25 @@ import (
 var wg sync.WaitGroup
 var DryRun = false
 
-//validate that the preferences file has all the correct fields
+//validate that the account information has all the correct fields
 func ValidateCF(cloud *Account) error {
 	msgs := []string{}
 
 	//check the required fields are not blank
 	if cloud.Email == "" {
-		msgs = append(msgs, "Email information is empty. Please edit your preferences.toml with the email associated with your cloudflare account")
+		msgs = append(msgs, "Email information is empty. Please specify in preferences file or command line flag.")
 	}
 	if cloud.Namespace == "" {
-		msgs = append(msgs, "Namespace information is empty. Please edit your preferences.toml with valid namespace")
+		msgs = append(msgs, "Namespace information is empty. Please specify in preferences file or command line flag.")
 	}
 	if cloud.Account == "" {
-		msgs = append(msgs, "Account information is empty. Please edit your preferences.toml with valid account tag")
+		msgs = append(msgs, "Account information is empty. Please specify in preferences file or command line flag.")
 	}
 	if cloud.Key == "" && cloud.Token == "" {
-		msgs = append(msgs, "Key and Token are empty. Please edit your preferences.toml with a valid key or token. It is best practice to access your account through a least priviledged token.")
+		msgs = append(msgs, "Key and Token are empty. Please specify in preferences file or command line flag.")
 	}
 	if cloud.HomeDirectory == "" {
-		glog.Info("Your Home Directory was not set. Your relative paths will use your current directory, which may not work as intended.")
+		msgs = append(msgs, "Home directory is empty. Please specify in preferences file or command line flag.")
 	}
 
 	if len(msgs) > 0 {
