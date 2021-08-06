@@ -10,29 +10,41 @@ import (
 
 //creates a lock file for data.dat
 func AddLock() {
+	lockPath, err := MakeCanonicalPath("lock.pid")
+	if err != nil {
+		glog.Fatalf("While trying to create lock file 'lock.pid': %v", err)
+	}
 	//if exist
-	if fi, err := os.Stat("lock.pid"); err == nil {
+	if _, err := os.Stat(lockPath); err == nil {
 		//add nuances here
-		p := MustMakeCanonicalPath(fi.Name())
-		glog.Fatalf("Data.dat has been locked for access. Please properly close the other program. If you wish to delete the lock manually, delete %s.", p)
-	} else {
-		lockfile, err := os.Create("lock.pid")
-		NoErrorFound(err, "There was an error creating lock.pid")
+		glog.Fatalf("Data.dat has been locked for access. Please properly close the other program. If you wish to delete the lock manually, delete 'lock.pid'.")
+	}
+	lockfile, err := os.Create(lockPath)
+	if err != nil {
+		glog.Fatalf("There was an error creating '%s': %v", lockPath, err)
+	}
+	defer lockfile.Close()
 
-		defer lockfile.Close()
-
-		//write the process id into the file
-		_, err = io.WriteString(lockfile, fmt.Sprintf("%v", os.Getpid()))
-		NoErrorFound(err, "Error writing the processid to the lock file!")
+	//write the process id into the file
+	_, err = io.WriteString(lockfile, fmt.Sprintf("%v", os.Getpid()))
+	if err != nil {
+		glog.Errorf("Error writing to the lock file '%s': %v", lockPath, err)
+		lockfile.Close()
+		if err := os.Remove(lockPath); err != nil {
+			glog.Fatalf("While cleaning up lock file '%s': %v", lockPath, err)
+		}
 	}
 }
 
 //creates a lock file for data.dat
 func DeleteLock() {
-	glog.Infoln("Attempting to delete lock!")
-	if _, err := os.Stat("lock.pid"); err == nil {
-		err := os.Remove("lock.pid")
-		NoErrorFound(err, "Error deleting lock.pid")
+	lockPath, err := MakeCanonicalPath("lock.pid")
+	if err != nil {
+		glog.Fatalf("While trying to delete lock file 'lock.pid': %v", err)
+	}
+	glog.Infof("Attempting to delete '%s'", lockPath)
+	if err := os.Remove("lock.pid"); err != nil {
+		glog.Fatalf("While deleting lock file '%s': %v", lockPath, err)
 	}
 }
 

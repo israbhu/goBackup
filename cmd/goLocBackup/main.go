@@ -45,38 +45,41 @@ func backup() {
 	}
 }
 
+func readPreferencesFile(path string, cf *gobackup.Account) error {
+	err := readTOML(path, cf)
+
+	//preferences file is not necessary, so only a warning given to user
+	gobackup.NoErrorFound(err, "readTOML has encountered an error while attempting to open the preferences file. Program will continue to run but may be unstable if all the necessary command line options are not used.")
+
+	return err
+}
+
 //read from a toml file
-//check that the file exists since the function can be called from a commandline argument
-func readTOML(file string) {
-	path := gobackup.MustMakeCanonicalPath(file)
+//check that the file is accessible since the function can be called from a commandline argument
+// The content of iface is undefined when the returned error is not nil.
+func readTOML(file string, iface interface{}) error {
+	path, err := gobackup.MakeCanonicalPath(file)
+	if err != nil {
+		return fmt.Errorf("While getting the canonical path for '%s': %v", file, err)
+	}
 
-	if _, err := os.Stat(path); err == nil {
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("While calling stat on file '%s': %v", path, err)
+	}
 
-		glog.Infof("Reading in the toml file, %v", path)
-		dat, err := ioutil.ReadFile(path)
+	glog.Infof("Reading in the toml file, '%s'", path)
+	dat, err := ioutil.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("While reading file '%s': %v", path, err)
+	}
 
-		//preferences file is not necessary, so only a warning given to user
-		gobackup.NoErrorFound(err, "readTOML has encountered an error while attempting to open the preferences file. Program will continue to run but may be unstable if all the necessary command line options are not used.")
+	glog.V(1).Infof("Parsing preferences TOML: '%s'", path)
+	if err := toml.Unmarshal(dat, iface); err != nil {
+		return fmt.Errorf("While reading in the TOML file '%s': %v", path, err)
+	}
+	glog.V(1).Infof("Parsed '%s' to: %+v", path, cf)
 
-		astring := string(dat)
-
-		doc2 := []byte(astring)
-
-		if file == "data.dat" {
-			toml.Unmarshal(doc2, &dat)
-			glog.V(1).Infof("Reading in the data file: %s", path)
-			glog.V(1).Infoln(dat)
-
-		} else {
-			toml.Unmarshal(doc2, &cf)
-
-			glog.V(1).Infof("Reading in the preference file: %s", path)
-			glog.V(1).Infof("%+v", cf)
-		}
-	} else { //the file does not exist
-		glog.Warningf("The file '%s' does not exist! We strongly recommend creating the file for higher efficiency.", path)
-	} //else
-
+	return nil
 }
 
 //write to a toml file
@@ -94,79 +97,50 @@ func writeTOML(file string, data *gobackup.DataContainer) {
 
 }
 
-//create a new empty file named name
-func createEmptyFile(name string) {
-	path := gobackup.MustMakeCanonicalPath(name)
-	if _, err := os.Stat(path); err == nil {
-		return
-	}
-
-	d := []byte("")
-	gobackup.NoErrorFound(ioutil.WriteFile(path, d, 0644), "")
-}
-
-//make a new directory called name
-func mkdir(name string) {
-	path := gobackup.MustMakeCanonicalPath(name)
-	if _, err := os.Stat(path); err == nil {
-		return
-	} else {
-		err := os.Mkdir(path, 0755)
-		gobackup.NoErrorFound(err, fmt.Sprintf("Could not make directory '%s'", path))
-	}
-}
-
 //parameters
 //name is the drive path to a folder
 //f is a slice that contains all of the accumulated files
-//return []string
 //the return []string is the slice f
-func getFiles(name string, f []string) []string {
+// When error is not nil, f is not valid.
+func getFiles(name string, f *[]string) error {
 	//make sure name is valid
 	if name == "" {
 		glog.Infoln("getFiles name is blank, getting files from local directory")
 		name = "."
 	}
 
-	path := gobackup.MustMakeCanonicalPath(name)
+	path, err := gobackup.MakeCanonicalPath(name)
+	if err != nil {
+		return fmt.Errorf("While getting canonical path for '%s': %v", name, err)
+	}
 	if fi, err := os.Stat(path); err == nil {
 		//if it's a regular file, append and return f
 		if fi.Mode().IsRegular() {
-			f = append(f, path)
-			return f
+			*f = append(*f, path)
+			return nil
 		}
 	} else {
-		glog.Errorf("getFiles has encountered a problem with os.Stat(%s): %v", name, err)
-		glog.Info("getFiles will return without appending any files")
-		return f
+		return fmt.Errorf("getFiles has encountered a problem with os.Stat(%s): %v", path, err)
 	}
 
 	glog.V(2).Infof("getFiles name=**%v**\n", name)
-	err := filepath.Walk(name, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(name, func(path string, info os.FileInfo, err error) error {
 		if !gobackup.NoErrorFound(err, "") {
 			basedir, _ := os.Getwd()
 
 			gobackup.DeleteLock()
-			glog.Fatalf("Cannot find %v. Closing the program!", filepath.Join(basedir, path))
+			return fmt.Errorf("Cannot find %v. Closing the program!: %v", filepath.Join(basedir, path), err)
 		}
 		//remove .
 		if path != "." && !info.IsDir() {
-			f = append(f, path)
+			*f = append(*f, path)
 		}
 		return nil
 	})
 	if !gobackup.NoErrorFound(err, "The filepath.Walk encountered an error. Returning without modifying the file list") {
-		glog.
-			Infof("Error found: %v\n", err)
+		return err
 	}
-	return f
-}
-
-func save(file string) {
-	if file != "" {
-
-	}
-
+	return nil
 }
 
 //process the command line commands
@@ -204,11 +178,11 @@ func extractCommandLine() {
 		glog.Infoln("Alternate Preferences file detected, checking:")
 		preferences = *altPrefFlag
 
-		readTOML(*altPrefFlag)
-		if err := gobackup.ValidateCF(&cf); err != nil {
-			gobackup.DeleteLock()
-			glog.Fatalf("The preferences file at '%s' has errors that need to be fixed!: %v", gobackup.MustMakeCanonicalPath(*altPrefFlag), err)
-		}
+		readPreferencesFile(*altPrefFlag, &cf)
+		// 		if err := gobackup.ValidateCF(&cf); err != nil {
+		// 			gobackup.DeleteLock()
+		// 			glog.Fatalf("The preferences file at '%s' has errors that need to be fixed!: %v", gobackup.MustMakeCanonicalPath(*altPrefFlag), err)
+		// 		}
 	}
 
 	//overwrite over any preferences file
@@ -219,14 +193,10 @@ func extractCommandLine() {
 	if *searchFlag != "" {
 		gobackup.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result")
 
-		//		fmt.Println("Displaying dat")
-		//		fmt.Println(dat)
-
 		glog.Info("Displaying sorted dat")
 		sort.Sort(gobackup.ByFilepath(dat.TheMetadata))
 
-		glog.Info(dat)
-		gobackup.DeleteLock()
+		glog.Infof("%+v", dat.TheMetadata)
 
 		//save the data container to the file indicated by *saveFlag
 		writeTOML(*saveFlag, &dat)
@@ -500,26 +470,27 @@ func main() {
 	//command line can overwrite the data from the preferences file
 	extractCommandLine()
 
-	//if no alternate preferences were in the command line, extract the default
-	if cf.Token == "" {
-		readTOML("preferences.toml")
-		glog.Infof("preferences resolved to: %v", gobackup.MustMakeCanonicalPath("preferences.toml"))
+	// lock()
+	// defer unlock()
+	switch cmd {
+	case "search":
+		search()
+	case "listMostRecent":
+		listMostRecent()
+		//....
+	default:
+		glog.Fatalf("You messed up. Here is the usage of this program")
+
+	}
+
+	if err := gobackup.ValidateCF(&cf); err != nil {
+		glog.Fatalf("Account information is not valid: %v", err)
 	}
 
 	pref, _ := filepath.Abs(preferences)
 
 	gobackup.ChangeHomeDirectory(&cf)
 	fmt.Printf("Checking that directory is below home! Directory:%v result:%t", pref, gobackup.CheckPath(pref, &cf))
-
-	fmt.Println("Checking the canonical path:" + gobackup.MustMakeCanonicalPath("test.txt"))
-
-	//make sure the preferences are valid
-	if err := gobackup.ValidateCF(&cf); err != nil {
-		gobackup.DeleteLock()
-		glog.Fatalf("Your preferences files located at %v has not passed the validation stage."+
-			" Please edit your preferences with valid values or use additional commandline options"+
-			" for the appropriate values. The errors are: %v", gobackup.MustMakeCanonicalPath(preferences), err)
-	}
 
 	//prevent other local gobackup instances from altering critical files
 	gobackup.AddLock()
@@ -533,7 +504,10 @@ func main() {
 	backupLocations := strings.Split(cf.Location, ",")
 
 	for _, l := range backupLocations {
-		fileList = getFiles(strings.TrimSpace(l), fileList)
+		if err := getFiles(strings.TrimSpace(l), &fileList); err != nil {
+			glog.Errorf("Fatal error while getting files to back up: %v", err)
+			return
+		}
 	}
 
 	sort.Strings(fileList)
