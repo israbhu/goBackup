@@ -29,7 +29,7 @@ func ValidateCF(cloud *Account) error {
 	if cloud.Namespace == "" {
 		msgs = append(msgs, "Namespace information is empty. Please specify in preferences file or command line flag.")
 	}
-	if cloud.Account == "" {
+	if cloud.AccountID == "" {
 		msgs = append(msgs, "Account information is empty. Please specify in preferences file or command line flag.")
 	}
 	if cloud.Key == "" && cloud.Token == "" {
@@ -55,7 +55,7 @@ func GetKVkeys(cf *Account) []byte {
 
 	//request     accounts/:account_identifier/storage/kv/namespaces/:namespace_i3dentifier/values/:key_name
 	//request GET accounts/:account_identifier/storage/kv/namespaces/:namespace_identifier/keys
-	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/keys"
+	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.AccountID + "/storage/kv/namespaces/" + cf.Namespace + "/keys"
 
 	glog.Infoln("GET KEY REQUEST:" + request)
 
@@ -185,7 +185,7 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 	// If you don't close it, your request will be missing the terminating boundary.
 	w.Close()
 
-	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + hash
+	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.AccountID + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + hash
 	//	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/valu
 	/*
 		if DryRun {
@@ -322,7 +322,7 @@ func UploadKV(cf *Account, meta Metadata) bool {
 
 	//normal
 	// 5/10/21	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + hash
-	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + hash + "?value=testvalue?metadata=testmetadata"
+	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.AccountID + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + hash + "?value=testvalue?metadata=testmetadata"
 	//	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/valu
 	glog.Infoln("UPLOAD REQUEST:" + request)
 	//put request to upload the data
@@ -373,7 +373,7 @@ func DownloadKV(cf *Account, dataKey string, downloadPath string) bool {
 	client := &http.Client{}
 
 	//GET accounts/:account_identifier/storage/kv/namespaces/:namespace_identifier/values/:key_name
-	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + dataKey
+	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.AccountID + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + dataKey
 	/*
 		if DryRun {
 			request = "127.0.0.1"
@@ -436,7 +436,7 @@ type Account struct {
 	// Token is used instead of the key and created on cloudflare at https://dash.cloudflare.com/profile/api-tokens
 	// email is the email associated with your cloudflare account
 
-	Account, Data, Email, Namespace, Key, Token, Location, Zip, Backup, HomeDirectory string
+	AccountID, Data, Email, Namespace, Key, Token, Location, Zip, Backup, HomeDirectory string
 }
 
 type CloudflareResponse struct {
