@@ -1,4 +1,4 @@
-package gobackup
+package cf
 
 import (
 	"bytes"
@@ -9,45 +9,17 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
-	"strings"
 	"sync"
 
 	"github.com/golang/glog"
+
+	"github.com/israbhu/goBackup/internal/pkg/gobackup"
 )
 
 var wg sync.WaitGroup
-var DryRun = false
-
-//validate that the account information has all the correct fields
-func ValidateCF(cloud *Account) error {
-	msgs := []string{}
-
-	//check the required fields are not blank
-	if cloud.Email == "" {
-		msgs = append(msgs, "Email information is empty. Please specify in preferences file or command line flag.")
-	}
-	if cloud.Namespace == "" {
-		msgs = append(msgs, "Namespace information is empty. Please specify in preferences file or command line flag.")
-	}
-	if cloud.AccountID == "" {
-		msgs = append(msgs, "Account information is empty. Please specify in preferences file or command line flag.")
-	}
-	if cloud.Key == "" && cloud.Token == "" {
-		msgs = append(msgs, "Key and Token are empty. Please specify in preferences file or command line flag.")
-	}
-	if cloud.HomeDirectory == "" {
-		msgs = append(msgs, "Home directory is empty. Please specify in preferences file or command line flag.")
-	}
-
-	if len(msgs) > 0 {
-		return fmt.Errorf("Account Settings did not validate: \n%s", strings.Join(msgs, "\n"))
-	}
-
-	return nil
-}
 
 //get the stored keys on the account
-func GetKVkeys(cf *Account) []byte {
+func (cf *Account) GetKVkeys() []byte {
 	client := &http.Client{}
 
 	//buffer to store our request body as bytes
@@ -79,7 +51,7 @@ func GetKVkeys(cf *Account) []byte {
 
 	req.Header.Set("X-Auth-Email", cf.Email)
 
-	if DryRun {
+	if cf.LocalOnly {
 		return []byte("dry run")
 	}
 
@@ -108,7 +80,7 @@ func GetKVkeys(cf *Account) []byte {
 }
 
 //func UploadMultiPart(client *http.Client, url string, values map[string]io.Reader, filename string) (err error) {
-func UploadMultiPart(cf *Account, meta Metadata) bool {
+func UploadMultiPart(cf *Account, meta gobackup.Metadata) bool {
 
 	filename := meta.FileName
 	//max value size = 25 mb
@@ -141,7 +113,7 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 				glog.Infoln("zstandard")
 				glog.Infoln("*************")
 			}
-			go zStandardInit(filename, pw)
+			go gobackup.ZStandardInit(filename, pw)
 		} else if cf.Zip == "zip" {
 			if glog.V(1) {
 				glog.Infoln("*************")
@@ -149,14 +121,14 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 				glog.Infoln("*************")
 			}
 			errCh := make(chan error, 1)
-			go zipInit(filename, pr, pw, errCh)
+			go gobackup.ZipInit(filename, pr, pw, errCh)
 		} else { //no compression
 			if glog.V(1) {
 				glog.Infoln("*************")
 				glog.Infoln("no compression")
 				glog.Infoln("*************")
 			}
-			go copyFile(filename, pr, pw)
+			go gobackup.CopyFile(filename, pr, pw)
 		}
 
 		//copy up to 24MB using the pipereader
@@ -176,7 +148,7 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 
 	jsonBytes, err := json.Marshal(meta)
 	if err != nil {
-		DeleteLock()
+		gobackup.DeleteLock()
 		glog.Fatalf("Could not marshal metadata %+v: %v", meta, err)
 	}
 	formWriter.Write(jsonBytes) //send metadata
@@ -188,7 +160,7 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.AccountID + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + hash
 	//	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.Account + "/storage/kv/namespaces/" + cf.Namespace + "/valu
 	/*
-		if DryRun {
+		if cf.LocalOnly {
 			request = "127.0.0.1"
 		}
 	*/
@@ -212,7 +184,7 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 
 	glog.V(2).Infof("Request to be sent: %q\n", fmt.Sprintf("%+v", req))
 
-	if DryRun {
+	if cf.LocalOnly {
 		return true
 	}
 	resp, err := client.Do(req)
@@ -252,7 +224,7 @@ func UploadMultiPart(cf *Account, meta Metadata) bool {
 //hash is the hash of the file
 //A normal hash should be 16 bytes and anything larger indicates the file has been split amoung several files. The additional length is the file number appended to the hash
 
-func UploadKV(cf *Account, meta Metadata) bool {
+func UploadKV(cf *Account, meta gobackup.Metadata) bool {
 
 	filename := meta.FileName
 	//max value size = 25 mb
@@ -274,12 +246,12 @@ func UploadKV(cf *Account, meta Metadata) bool {
 		pr, pw := io.Pipe()
 		//		errCh := make(chan error, 1)
 		//		go zipInit(filename, pr, pw, errCh)
-		go zStandardInit(filename, pw)
+		go gobackup.ZStandardInit(filename, pw)
 
 		//copy up to 24MB using the pipereader
 		written, err := io.CopyN(&fileUpload, pr, 24*1024*1024)
 		if err != nil && err != io.EOF {
-			DeleteLock()
+			gobackup.DeleteLock()
 			glog.Fatalf("Bytes written: %d, err: %v\n", written, err)
 		}
 
@@ -287,7 +259,7 @@ func UploadKV(cf *Account, meta Metadata) bool {
 		if written == 24*1024*1024 {
 			glog.Infof("***File is larger than 24MB, new upload initiated***")
 			meta.FileNum += 1
-			meta.pr = pr
+			meta.PR = pr
 
 			//asynchronousUpload
 			wg.Add(1)
@@ -300,7 +272,7 @@ func UploadKV(cf *Account, meta Metadata) bool {
 		hash = fmt.Sprintf("%s%d", hash, meta.FileNum)
 
 		//copy up to 24MB using the pipereader
-		written, err := io.CopyN(&fileUpload, meta.pr, 24*1024*1024)
+		written, err := io.CopyN(&fileUpload, meta.PR, 24*1024*1024)
 		if err != nil {
 			glog.Fatalln(err)
 		}
@@ -375,7 +347,7 @@ func DownloadKV(cf *Account, dataKey string, downloadPath string) bool {
 	//GET accounts/:account_identifier/storage/kv/namespaces/:namespace_identifier/values/:key_name
 	request := "https://api.cloudflare.com/client/v4/accounts/" + cf.AccountID + "/storage/kv/namespaces/" + cf.Namespace + "/values/" + dataKey
 	/*
-		if DryRun {
+		if cf.LocalOnly {
 			request = "127.0.0.1"
 		}
 	*/
@@ -398,7 +370,7 @@ func DownloadKV(cf *Account, dataKey string, downloadPath string) bool {
 
 	req.Header.Set("X-Auth-Email", cf.Email)
 
-	if DryRun {
+	if cf.LocalOnly {
 		return true
 	}
 	resp, err := client.Do(req)
@@ -427,26 +399,9 @@ func DownloadKV(cf *Account, dataKey string, downloadPath string) bool {
 
 }
 
-//******* This struct contains the data needed to access the cloudflare infrastructure. It is stored on drive in the file preferences.toml *****
-type Account struct {
-	//cloudflare account information
-	// namespace is called the "namespace id" on the cloudflare website for Workers KV
-	// account is called "account id" on the cloudflare dashboard
-	// key is also called the "global api key" on cloudflare at https://dash.cloudflare.com/profile/api-tokens
-	// Token is used instead of the key and created on cloudflare at https://dash.cloudflare.com/profile/api-tokens
-	// email is the email associated with your cloudflare account
-
-	AccountID, Data, Email, Namespace, Key, Token, Location, Zip, Backup, HomeDirectory string
-}
-
 type CloudflareResponse struct {
-	Result   []MyData `json:"result"`
-	Success  bool     `json:"success"`
-	Errors   []string `json:"errors"`
-	Messages []string `json:"messages"`
-}
-
-type MyData struct {
-	Name        string   `json:"name"`
-	TheMetadata Metadata `json:"metadata"`
+	Result   []gobackup.MyData `json:"result"`
+	Success  bool              `json:"success"`
+	Errors   []string          `json:"errors"`
+	Messages []string          `json:"messages"`
 }

@@ -15,7 +15,7 @@ import (
 //open a pipe
 pr, pw := io.Pipe()
 errCh := make(chan error, 1)
-go zipInit(pr, pw, errCh)
+go ZipInit(pr, pw, errCh)
 
 //copy from file to the writer
 zipFile, _ := os.Create("file.zip")
@@ -69,7 +69,7 @@ func fileAccess(filename string, lastAccess time.Time, lastModify time.Time) {
 }
 
 //create a zstandard compressed file
-func zStandardInit(filename string, pw *io.PipeWriter) {
+func ZStandardInit(filename string, pw *io.PipeWriter) {
 	defer pw.Close()
 
 	enc, err := zstd.NewWriter(pw)
@@ -81,7 +81,7 @@ func zStandardInit(filename string, pw *io.PipeWriter) {
 	//open the file to be zipped
 	file, err := os.Open(filename)
 	if err != nil {
-		glog.Errorf("Error in zStandardInit: %v", err)
+		glog.Errorf("Error in ZStandardInit: %v", err)
 	}
 	defer file.Close()
 
@@ -96,7 +96,7 @@ func zStandardInit(filename string, pw *io.PipeWriter) {
 }
 
 //no compression
-func copyFile(filename string, pr *io.PipeReader, pw *io.PipeWriter) {
+func CopyFile(filename string, pr *io.PipeReader, pw *io.PipeWriter) {
 	defer pw.Close()
 	//open the file to be zipped
 	file, err := os.Open(filename)
@@ -137,7 +137,7 @@ func zStandardDecompress(filename string, pr *io.PipeReader, pw *io.PipeWriter) 
 
 //create a zip using pipes
 //must use in a go routine
-func zipInit(filename string, pr *io.PipeReader, pw *io.PipeWriter, errCh chan error) {
+func ZipInit(filename string, pr *io.PipeReader, pw *io.PipeWriter, errCh chan error) {
 	defer close(errCh)
 	defer pw.Close()
 	//open the file to be zipped

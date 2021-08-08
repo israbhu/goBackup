@@ -12,8 +12,10 @@ import (
 	"strings"
 
 	"github.com/golang/glog"
-	"github.com/israbhu/goBackup/internal/pkg/gobackup"
 	"github.com/pelletier/go-toml"
+
+	"github.com/israbhu/goBackup/internal/pkg/cf"
+	"github.com/israbhu/goBackup/internal/pkg/gobackup"
 )
 
 //***************Info*************************
@@ -40,23 +42,28 @@ download a specific file (use the listAllFiles to find the hash?)
 //uploading the data should be the most time consuming portion of the program, so it will pushed into a go routine
 func backup(p programParameters) {
 	for _, list := range dat.TheMetadata {
-		gobackup.UploadMultiPart(&p.Account, list)
+		cf.UploadMultiPart(&p.Account, list)
 	}
 }
 
-func readPreferencesFile(p programParameters) error {
-	err := readTOML(p, p.preferencesFile, p.Account)
+// Reads the preferences file at the given path.
+// Returns an account, which may be empty if there was a problem reading the
+// file.
+func readPreferencesFile(path string) cf.Account {
+
+	var acct cf.Account
+	err := readTOML(path, acct)
 
 	//preferences file is not necessary, so only a warning given to user
 	gobackup.NoErrorFound(err, "readTOML has encountered an error while attempting to open the preferences file. Program will continue to run but may be unstable if all the necessary command line options are not used.")
 
-	return err
+	return acct
 }
 
 //read from a toml file
 //check that the file is accessible since the function can be called from a commandline argument
 // The content of iface is undefined when the returned error is not nil.
-func readTOML(p programParameters, file string, iface interface{}) error {
+func readTOML(file string, iface interface{}) error {
 	path, err := gobackup.MakeCanonicalPath(file)
 	if err != nil {
 		return fmt.Errorf("While getting the canonical path for '%s': %v", file, err)
@@ -76,7 +83,7 @@ func readTOML(p programParameters, file string, iface interface{}) error {
 	if err := toml.Unmarshal(dat, iface); err != nil {
 		return fmt.Errorf("While reading in the TOML file '%s': %v", path, err)
 	}
-	glog.V(1).Infof("Parsed '%s' to: %+v", path, p)
+	glog.V(1).Infof("Parsed '%s' to: %+v", path, iface)
 
 	return nil
 }
@@ -142,29 +149,97 @@ func getFiles(name string, f *[]string) error {
 	return nil
 }
 
-// 	Namespace, // namespace is called the "namespace id" on the cloudflare website for Workers KV
-// 	Account, // account is called "account id" on the cloudflare dashboard
-// 	Key, // key is also called the "global api key" on cloudflare at https://dash.cloudflare.com/profile/api-tokens
-// 	Token, // Token is used instead of the key (More secure than using Key) and created on cloudflare at https://dash.cloudflare.com/profile/api-tokens
-// 	Email, // email is the email associated with your cloudflare account
-// 	Data,
-// 	Location, //locations of the comma deliminated file and folders to be backed up
-// 	DownloadLocation, //default location to download data
-// 	Zip, //string to determine zip type. Currently none, zstandard, and zip
-// 	Backup string
 type programParameters struct {
 	addLocation     string
+	command         string
+	datPath         string
 	dryRun          bool
-	homeDirectory   string
 	preferencesFile string
-	gobackup.Account
+	cf.Account
+}
+
+// Returns an account information given all of the options given on the command
+// line.
+func (p *programParameters) makeAccount() *cf.Account {
+	var acct cf.Account
+
+	// Command line options override settings in preferences file.
+	// Read the preferences file first, then set any command line options.
+	if p.preferencesFile != "" {
+		// read the preferences file and populate fields.
+		// Ignore any error.
+		acct = readPreferencesFile(p.preferencesFile)
+	}
+
+	// Override fields with any flags that were present.
+	if p.Email != "" {
+		acct.Email = p.Email
+	}
+	if p.AccountID != "" {
+		acct.AccountID = p.AccountID
+	}
+	if p.Namespace != "" {
+		acct.Namespace = p.Namespace
+	}
+	if p.Key != "" {
+		acct.Key = p.Key
+	}
+	if p.Token != "" {
+		acct.Token = p.Token
+	}
+	if p.Location != "" {
+		acct.Location = p.Location
+	}
+	if p.addLocation != "" {
+		acct.Location = acct.Location + "," + p.addLocation
+	}
+	if p.Zip != "" {
+		acct.Zip = p.Zip
+	}
+	if p.HomeDirectory != "" {
+		acct.HomeDirectory = p.HomeDirectory
+	}
+
+	acct.LocalOnly = p.dryRun
+
+	if err := acct.Validate(); err != nil {
+		glog.Errorf("Could not make an account from arguments: %v", err)
+		return nil
+	}
+
+	return &acct
 }
 
 //process the command line commands
 //yes, email, Account, Data, Email, Namespace, Key, Token, Location string
 //backup strategy, zip, encrypt, verbose, sync, list data, alt pref, no pref
 func extractCommandLine() programParameters {
+	commands := map[string]string{
+		"keys":            "Get the keys and metadata from cloudflare",
+		"sync":            "Download the keys and metadata from cloud and overwrite the local database",
+		"search":          "Search the local database and print to screen",
+		"listAllFiles":    "List all files in the local database",
+		"listRecentFiles": "List most recent files in the local database",
+		"save":            "save the current data queue to the save file",
+	}
+	flag.Usage = func() {
+		var args []string
+		var desc string
+		for k, v := range commands {
+			args = append(args, k)
+			desc += fmt.Sprintf("  %s\n\t%s\n", k, v)
+		}
+		fmt.Fprintf(flag.CommandLine.Output(), "USAGE: goLocBackup [options] <%s>\n\n", strings.Join(args, "|"))
+		fmt.Fprintf(flag.CommandLine.Output(), "commands:\n%s\noptions:\n", desc)
+		flag.PrintDefaults()
+	}
+
 	var p programParameters
+
+	flag.StringVar(&p.preferencesFile, "pref", "", "use an alternate preference file")
+	flag.BoolVar(&p.dryRun, "dryrun", false, "Dry run. Goes through all the steps, but it makes no changes on disk or network")
+
+	// Account Overrides
 	flag.StringVar(&p.Email, "email", "", "Set the User email instead of using any preferences file")
 	flag.StringVar(&p.AccountID, "account", "", "Set the User Account instead of using any preferences file")
 	flag.StringVar(&p.Namespace, "namespace", "", "Set the User's Namespace instead of using any preferences file")
@@ -174,187 +249,25 @@ func extractCommandLine() programParameters {
 	flag.StringVar(&p.Location, "location", "", "Use only these locations to backup")
 	// FIXME Duplicate? flag.String(&p.Location, "download", "", "Download files. By default use the preferences location. Use -location and -addLocation to modify the files downloaded.")
 	flag.StringVar(&p.Zip, "zip", "", "Set the zip compression to 'none', 'zstandard', or 'zip'")
-	flag.StringVar(&p.preferencesFile, "pref", "", "use an alternate preference file")
-	flag.BoolVar(&p.dryRun, "dryrun", false, "Dry run. Goes through all the steps, but it makes no changes on disk or network")
-	flag.StringVar(&p.homeDirectory, "home", "", "Change your home directory. All relative paths based on home directory")
+	flag.StringVar(&p.HomeDirectory, "home", "", "Change your home directory. All relative paths based on home directory")
+	flag.StringVar(&p.datPath, "save", "", "save the current data queue to the save file")
 
-	// TODO Make these command arguments instead of separate options to the program.
-	var getKeysFlag = flag.Bool("keys", false, "Get the keys and metadata from cloudflare")
-	var syncFlag = flag.Bool("sync", false, "Download the keys and metadata from cloud and overwrite the local database")
-	var searchFlag = flag.String("search", "", "Search the local database and print to screen")
-	var listAllFlag = flag.String("listAllFiles", "", "List all files in the local database")
-	var listRecentFlag = flag.String("listRecentFiles", "", "List most recent files in the local database")
-	var saveFlag = flag.String("save", "", "save the current data queue to the save file")
-
+	// Force logs to stderr, as this is a command line program.
 	flag.Set("logtostderr", "true")
 	flag.Parse()
-	glog.Infoln("Checking flags!")
-
-	if p.preferencesFile != "" {
-		glog.Infoln("Alternate Preferences file detected, checking:")
-
-		readPreferencesFile(p)
-		// 		if err := gobackup.ValidateCF(&p.Account); err != nil {
-		// 			gobackup.DeleteLock()
-		// 			glog.Fatalf("The preferences file at '%s' has errors that need to be fixed!: %v", gobackup.MustMakeCanonicalPath(*altPrefFlag), err)
-		// 		}
-	}
-
-	if *searchFlag != "" {
-		gobackup.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result")
-
-		glog.Info("Displaying sorted dat")
-		sort.Sort(gobackup.ByFilepath(dat.TheMetadata))
-
-		glog.Infof("%+v", dat.TheMetadata)
-
-		//save the data container to the file indicated by *saveFlag
-		writeTOML(*saveFlag, &dat)
-
-		os.Exit(0)
-	}
-
-	if *listAllFlag != "" {
-		gobackup.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result")
-
-		glog.Info("Displaying sorted dat")
-		sort.Sort(gobackup.ByFilepath(dat.TheMetadata))
-
-		glog.Info("Listing Files by key, filename, and last modified time")
-		for i := 0; i < len(dat.TheMetadata); i++ {
-			//			glog.Info(dat.TheMetadata[i].Hash + " " + dat.TheMetadata[i].FileName + " " + dat.TheMetadata[i].Mtime.String())
-			glog.Info(dat.TheMetadata[i].Hash + " " + dat.TheMetadata[i].FileName + " " + dat.TheMetadata[i].Filepath + " " + dat.TheMetadata[i].Mtime.String())
-		}
-
-		//save the data container to the file indicated by *saveFlag
-		writeTOML(*saveFlag, &dat)
-
-		//		fmt.Println(dat)
-		gobackup.DeleteLock()
-		os.Exit(0)
-	}
-
-	if *listRecentFlag != "" {
-		gobackup.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result")
-
-		glog.Info("Displaying sorted dat")
-		sort.Sort(gobackup.ByFilepath(dat.TheMetadata))
-
-		glog.Infof("%v metadata in the container after sorting\n", len(dat.TheMetadata))
-
-		var prune []gobackup.Metadata
-
-		//prune the old files
-		for i := 0; i < len(dat.TheMetadata)-1; i++ {
-			prune = append(prune, dat.TheMetadata[i])
-
-			test := dat.TheMetadata[i].FileName
-
-			//TODO decide if we need filePath, fileName, or something else
-			//prune out any similar filepaths
-			for test == dat.TheMetadata[i+1].FileName && i < len(dat.TheMetadata)-2 {
-				glog.Infof("test%v:%v vs test%v:%v", i, test, i+1, dat.TheMetadata[i+1].FileName)
-				i++
-			}
-		}
-
-		dat.TheMetadata = prune
-
-		glog.Infof("%v metadata in the container after pruning\n", len(dat.TheMetadata))
-
-		glog.Info("Listing Files by key, filename, and last modified time")
-		for i := 0; i < len(dat.TheMetadata); i++ {
-			glog.Info(dat.TheMetadata[i].Hash + " " + dat.TheMetadata[i].FileName + " " + dat.TheMetadata[i].Filepath + " " + dat.TheMetadata[i].Mtime.String())
-		}
-
-		//save the data container to the file indicated by *saveFlag
-		writeTOML(*saveFlag, &dat)
-
-		//		fmt.Println(dat)
-		gobackup.DeleteLock()
-		os.Exit(0)
-	}
-
-	if p.addLocation != "" { //add to the locations
-		p.Location = p.Location + "," + p.addLocation
-	}
 	glog.V(1).Infoln("Verbose information is true, opening the flood gates!")
 	if p.dryRun {
-		gobackup.DryRun = true
 		glog.Infoln("Dry Run is active! No changes will be made!")
 	}
-	if p.Location != "" {
-		if !gobackup.DryRun {
-			//check account
-			if err := gobackup.ValidateCF(&p.Account); err != nil {
-				gobackup.DeleteLock()
-				glog.Fatalf("%v", err)
-			}
-		}
 
-		//**** NEEEDS WORK!!****
-		//download the data
-		glog.Infoln(gobackup.DownloadKV(&p.Account, dat.TheMetadata[0].Hash, "test.txt"))
-
-		gobackup.DownloadKV(&p.Account, p.Location, "download.file")
-		glog.Infoln("Downloaded a file!")
-		os.Exit(0)
-	}
-	if *getKeysFlag {
-		if !gobackup.DryRun {
-			//check account
-			if err := gobackup.ValidateCF(&p.Account); err != nil {
-				gobackup.DeleteLock()
-				glog.Fatalf("%v", err)
-			}
-		}
-		//get keys
-		glog.Infoln("Getting the keys and metadata!")
-		glog.Infoln(string(gobackup.GetKVkeys(&p.Account)))
-		os.Exit(0)
+	if l := len(flag.Args()); l != 1 {
+		fmt.Fprintf(flag.CommandLine.Output(), "ERROR: Expecting exactly one command, but %d arguments were given\n\n", l)
+		flag.Usage()
+		os.Exit(1) // print usage and exit
 	}
 
-	if *syncFlag {
-		if !gobackup.DryRun {
-			//check account
-			if err := gobackup.ValidateCF(&p.Account); err != nil {
-				gobackup.DeleteLock()
-				glog.Fatalf("%v", err)
-			}
-		}
-		//get keys
-		glog.Infoln("Getting the keys and metadata!")
-		jsonKeys := gobackup.GetKVkeys(&p.Account)
-		glog.Infof("jsonKeys:%s", jsonKeys)
+	p.command = flag.Arg(0)
 
-		var extractedData gobackup.CloudflareResponse
-
-		json.Unmarshal(jsonKeys, &extractedData)
-
-		glog.Infof("Data extracted******: %v \n******", extractedData)
-		glog.Infof("success: %v\n", extractedData.Success)
-		if len(extractedData.Result) != 0 {
-			glog.V(1).Infof("size of result:%v\n", len(extractedData.Result))
-			glog.V(1).Infof("result: %v \n\n", extractedData.Result)
-
-			glog.Infoln("Adding extracted keys and metadata to data1 struct")
-			for i := 0; i < len(extractedData.Result); i++ {
-				//update the data struct
-				dat.TheMetadata = append(dat.TheMetadata, extractedData.Result[i].TheMetadata)
-				glog.Infoln("Added " + extractedData.Result[i].TheMetadata.FileName)
-			}
-
-			glog.Infof("Size of the data1 metadata array: %v\n", len(dat.TheMetadata))
-			glog.Infof("dat: %v\n\n\n", dat.TheMetadata)
-			//			sort.Sort(gobackup.ByHash(dat.TheMetadata))
-
-			gobackup.DataFile2("data.dat", &dat)
-
-		} else {
-			glog.Infoln("Empty Result")
-		}
-		os.Exit(0)
-	}
 	return p
 }
 
@@ -438,32 +351,164 @@ func populatePayloadAndMeta(dat *gobackup.DataContainer, meta *gobackup.Metadata
 	dat.Count += 2
 }
 
-func main() {
+func (p *programParameters) doSearch() error {
+	d := gobackup.Data{ReadOnly: p.dryRun}
 
+	d.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result")
+
+	glog.Info("Displaying sorted dat")
+	sort.Sort(gobackup.ByFilepath(dat.TheMetadata))
+
+	glog.Infof("%+v", dat.TheMetadata)
+
+	//save the data container to the file indicated by *saveFlag
+	writeTOML(p.datPath, &dat)
+
+	return nil
+}
+func (p *programParameters) doListAll() error {
+	d := gobackup.Data{ReadOnly: p.dryRun}
+	d.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result")
+
+	glog.Info("Displaying sorted dat")
+	sort.Sort(gobackup.ByFilepath(dat.TheMetadata))
+
+	glog.Info("Listing Files by key, filename, and last modified time")
+	for i := 0; i < len(dat.TheMetadata); i++ {
+		glog.Info(dat.TheMetadata[i].Hash + " " + dat.TheMetadata[i].FileName + " " + dat.TheMetadata[i].Filepath + " " + dat.TheMetadata[i].Mtime.String())
+	}
+
+	//save the data container to the file indicated by *saveFlag
+	writeTOML(p.datPath, &dat)
+
+	return nil
+}
+func (p *programParameters) doListRecent() error {
+	d := gobackup.Data{ReadOnly: p.dryRun}
+	d.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result")
+
+	glog.Info("Displaying sorted dat")
+	sort.Sort(gobackup.ByFilepath(dat.TheMetadata))
+
+	glog.Infof("%v metadata in the container after sorting\n", len(dat.TheMetadata))
+
+	var prune []gobackup.Metadata
+
+	//prune the old files
+	for i := 0; i < len(dat.TheMetadata)-1; i++ {
+		prune = append(prune, dat.TheMetadata[i])
+
+		test := dat.TheMetadata[i].FileName
+
+		//TODO decide if we need filePath, fileName, or something else
+		//prune out any similar filepaths
+		for test == dat.TheMetadata[i+1].FileName && i < len(dat.TheMetadata)-2 {
+			glog.Infof("test%v:%v vs test%v:%v", i, test, i+1, dat.TheMetadata[i+1].FileName)
+			i++
+		}
+	}
+
+	dat.TheMetadata = prune
+
+	glog.Infof("%v metadata in the container after pruning\n", len(dat.TheMetadata))
+
+	glog.Info("Listing Files by key, filename, and last modified time")
+	for i := 0; i < len(dat.TheMetadata); i++ {
+		glog.Info(dat.TheMetadata[i].Hash + " " + dat.TheMetadata[i].FileName + " " + dat.TheMetadata[i].Filepath + " " + dat.TheMetadata[i].Mtime.String())
+	}
+
+	//save the data container to the file indicated by *saveFlag
+	writeTOML(p.datPath, &dat)
+
+	return nil
+}
+
+func (p *programParameters) doGetKeys() error {
+	acct := p.makeAccount()
+	if acct == nil {
+		return fmt.Errorf("Could not get keys from invalid account")
+	}
+	//get keys
+	glog.Infoln("Getting the keys and metadata!")
+	glog.Infoln(string(acct.GetKVkeys()))
+	return nil
+}
+
+func (p *programParameters) doSync() error {
+	acct := p.makeAccount()
+	if acct == nil {
+		return fmt.Errorf("Could not get keys from invalid account")
+	}
+	//get keys
+	glog.Infoln("Getting the keys and metadata!")
+	jsonKeys := acct.GetKVkeys()
+	glog.Infof("jsonKeys:%s", jsonKeys)
+
+	var extractedData cf.CloudflareResponse
+
+	json.Unmarshal(jsonKeys, &extractedData)
+
+	glog.Infof("Data extracted******: %v \n******", extractedData)
+	glog.Infof("success: %v\n", extractedData.Success)
+	if len(extractedData.Result) != 0 {
+		glog.V(1).Infof("size of result:%v\n", len(extractedData.Result))
+		glog.V(1).Infof("result: %v \n\n", extractedData.Result)
+
+		glog.Infoln("Adding extracted keys and metadata to data1 struct")
+		for i := 0; i < len(extractedData.Result); i++ {
+			//update the data struct
+			dat.TheMetadata = append(dat.TheMetadata, extractedData.Result[i].TheMetadata)
+			glog.Infoln("Added " + extractedData.Result[i].TheMetadata.FileName)
+		}
+
+		glog.Infof("Size of the data1 metadata array: %v\n", len(dat.TheMetadata))
+		glog.Infof("dat: %v\n\n\n", dat.TheMetadata)
+		//			sort.Sort(gobackup.ByHash(dat.TheMetadata))
+
+		d := gobackup.Data{ReadOnly: p.dryRun}
+		d.DataFile2("data.dat", &dat) // FIXME respect the -save flag?
+	} else {
+		glog.Infoln("Empty Result")
+	}
+	return nil
+}
+
+func (p *programParameters) doCommand() error {
+	gobackup.AddLock()
+	defer gobackup.DeleteLock()
+
+	switch p.command {
+	case "search":
+		return p.doSearch()
+	case "listAllFiles":
+		return p.doListAll()
+	case "listRecentFiles":
+		return p.doListRecent()
+	case "keys":
+		return p.doGetKeys()
+	case "sync":
+		return p.doSync()
+	default:
+		return fmt.Errorf("BUG: unknown command '%s'", p.command)
+	}
+}
+
+func main() {
 	//command line can overwrite the data from the preferences file
 	p := extractCommandLine()
+	cf := p.makeAccount()
+	if cf == nil {
+		glog.Fatalf("Could not determine account information")
+	}
 
-	// lock()
-	// defer unlock()
-	// switch cmd {
-	// case "search":
-	// 	search()
-	// case "listMostRecent":
-	// 	listMostRecent()
-	// 	//....
-	// default:
-	// 	glog.Fatalf("You messed up. Here is the usage of this program")
-
-	// }
-
-	if err := gobackup.ValidateCF(&p.Account); err != nil {
-		glog.Fatalf("Account information is not valid: %v", err)
+	if err := p.doCommand(); err != nil {
+		os.Exit(1)
 	}
 
 	pref, _ := filepath.Abs(p.preferencesFile)
 
-	gobackup.ChangeHomeDirectory(&p.Account)
-	fmt.Printf("Checking that directory is below home! Directory:%v result:%t", pref, gobackup.CheckPath(pref, &p.Account))
+	gobackup.ChangeHomeDirectory(cf.HomeDirectory)
+	glog.V(1).Infof("Checking that directory is below home! Directory:%v result:%t", pref, gobackup.CheckPath(pref, cf.HomeDirectory))
 
 	//prevent other local gobackup instances from altering critical files
 	gobackup.AddLock()
@@ -522,11 +567,7 @@ func main() {
 	//split the work and backup
 	backup(p)
 
+	d := gobackup.Data{ReadOnly: p.dryRun}
 	//update the local data file
-	if gobackup.DryRun {
-		glog.Infoln("Dry Run dataFile2 is running!")
-		gobackup.DataFile2("", &dat)
-	} else {
-		gobackup.DataFile2("data.dat", &dat)
-	}
+	d.DataFile2("data.dat", &dat)
 } //main

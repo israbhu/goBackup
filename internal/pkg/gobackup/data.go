@@ -2,23 +2,28 @@ package gobackup
 
 import (
 	"bufio"
-	"path/filepath"
-	"strconv"
-	"strings"
-
-	//	"bytes"
 	"crypto/md5"
 	"encoding/hex"
-
-	//	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
 )
+
+type Data struct {
+	ReadOnly bool
+}
+
+type MyData struct {
+	Name        string   `json:"name"`
+	TheMetadata Metadata `json:"metadata"`
+}
 
 //convert hex bytes into a string
 func hashToString(in []byte) string {
@@ -69,11 +74,11 @@ func BuildData2(a *DataContainer) ([]byte, error) {
 }
 */
 //create a data file from data struct
-func DataFile2(file string, dat *DataContainer) {
+func (d *Data) DataFile2(file string, dat *DataContainer) {
 	var theFile io.ReadWriter
 	var err error
 
-	if DryRun { //dryRun
+	if d.ReadOnly { //dryRun
 		glog.Infoln("Dry run, setting output to standard out!")
 		theFile = os.Stdout
 	} else {
@@ -198,8 +203,8 @@ func StringToMetadata(stringMeta string) Metadata {
 //order will reorder the results asc (ascending), desc (descending), none (as entered)
 //result allows you to add formatting to the result string
 //the result string should be able to be outputted to standard out or a file to be used in combination with the download option
-func SearchLocalDatabase(dat *DataContainer, file string, method string, key string, order string, result string) string {
-	openLocalDatabase(file, "byHash", dat)
+func (d *Data) SearchLocalDatabase(dat *DataContainer, file string, method string, key string, order string, result string) string {
+	d.openLocalDatabase(file, "byHash", dat)
 	//	fmt.Println(dat)
 	return ""
 }
@@ -207,12 +212,12 @@ func SearchLocalDatabase(dat *DataContainer, file string, method string, key str
 //open the local database and sort it
 //file should be a string pointing to the file
 //sort is the preferred sort method run on the data
-func openLocalDatabase(file string, sort string, dat *DataContainer) {
+func (d *Data) openLocalDatabase(file string, sort string, dat *DataContainer) {
 
 	var theFile io.ReadWriter
 	var err error
 
-	if DryRun { //dryRun
+	if d.ReadOnly { //dryRun
 		glog.Infoln("Dry run, setting output to standard out!")
 		theFile = os.Stdout
 	} else {
@@ -271,7 +276,7 @@ type Metadata struct {
 	FileName    string    `json:"filename"`
 	Mtime       time.Time `json:"mtime"`
 	Size        int64
-	pr          *io.PipeReader
+	PR          *io.PipeReader
 }
 
 // ByHash Implements sort.Interface for []Metadata based on the Hash field.
@@ -347,14 +352,15 @@ func MakeCanonicalPath(path string) (string, error) {
 
 //attempt to change the current working directory as follows:
 //to the home directory in preferences, detected home directory, or allow to use CWD
-func ChangeHomeDirectory(cf *Account) {
-	if cf.HomeDirectory != "" {
-		glog.V(1).Info("CF Homedirectory found! Setting home path to:" + cf.HomeDirectory)
-		os.Chdir(cf.HomeDirectory)
+func ChangeHomeDirectory(path string) {
+	if path != "" {
+		glog.V(1).Info("Home directory found! Setting home path to: '%s'", path)
+		os.Chdir(path)
 	} else {
 		test, err := os.UserHomeDir()
 		if err != nil {
-			glog.V(1).Info("CF Homedirectory not found. User Home directory not found. Using Current directory.")
+			glog.V(1).Info("Home directory not found. User Home directory not found. Using Current directory.")
+			return
 		}
 		glog.V(1).Info("User home directory found! Setting home path to:" + test)
 		os.Chdir(test)
@@ -362,30 +368,14 @@ func ChangeHomeDirectory(cf *Account) {
 }
 
 //check that the path is not above the home directory
-func CheckPath(absolutepath string, cf *Account) bool {
-	//if cf.HomeDirectory is set
-	fmt.Println("checking path for:" + absolutepath)
-	if cf.HomeDirectory != "" {
-		if strings.HasPrefix(absolutepath, cf.HomeDirectory) {
-			fmt.Println("cf.HomeDirectory")
-			return true
-		} else {
-			return false
-		}
-	} else if ret, err := os.UserHomeDir(); err != nil { //otherwise try to get the user home directory
-		if strings.HasPrefix(absolutepath, ret) {
-			fmt.Println("os.UserHomeDir")
-			return true
-		} else {
-			return false
-		}
-	} else if ret, err := os.Getwd(); err != nil { //otherwise try and use current directory
-		if strings.HasPrefix(absolutepath, ret) {
-			fmt.Println("current working directory")
-			return true
-		} else {
-			return false
-		}
+func CheckPath(path, homePath string) bool {
+	glog.V(1).Infof("checking path for: %s", path)
+	if path != "" {
+		return strings.HasPrefix(path, homePath)
+	} else if ret, err := os.UserHomeDir(); err == nil { //otherwise try to get the user home directory
+		return strings.HasPrefix(path, ret)
+	} else if ret, err := os.Getwd(); err == nil { //otherwise try and use current directory
+		return strings.HasPrefix(path, ret)
 	} else { //everything fails, return false
 		return false
 	}
