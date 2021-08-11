@@ -6,7 +6,7 @@
 #email is the email associated with your cloudflare account
 #location are the files and folders to be backed up. All paths should be relative to the preferences file
 #downloadLocation is the default folder to download files. All paths should be relative to the preferences file
-account=""
+accountID=""
 namespace=""
 email=""
 key=""

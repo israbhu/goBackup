@@ -4,13 +4,16 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/golang/glog"
 )
 
 //creates a lock file for data.dat
 func AddLock() {
-	lockPath, err := MakeCanonicalPath("lock.pid")
+	//	lockPath, err := MakeCanonicalPath("lock.pid")
+	lockPath, err := filepath.Abs("lock.pid")
+
 	if err != nil {
 		glog.Fatalf("While trying to create lock file 'lock.pid': %v", err)
 	}

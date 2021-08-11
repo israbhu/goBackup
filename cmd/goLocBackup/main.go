@@ -52,10 +52,13 @@ func backup(p programParameters) {
 func readPreferencesFile(path string) cf.Account {
 
 	var acct cf.Account
-	err := readTOML(path, acct)
+	err := readTOML(path, &acct)
 
-	//preferences file is not necessary, so only a warning given to user
-	gobackup.NoErrorFound(err, "readTOML has encountered an error while attempting to open the preferences file. Program will continue to run but may be unstable if all the necessary command line options are not used.")
+	glog.V(1).Infof("Finished reading the preferences file, showing results: %v6", &acct)
+
+	if err != nil {
+		glog.Info("While reading the preferences file, an error was encountered:%s", err)
+	}
 
 	return acct
 }
@@ -79,10 +82,15 @@ func readTOML(file string, iface interface{}) error {
 		return fmt.Errorf("While reading file '%s': %v", path, err)
 	}
 
+	glog.Infof("Passed log 1 point, '%s'", path)
+	glog.Infof("Data at log 1 point, '%s'", string(dat))
+
 	glog.V(1).Infof("Parsing preferences TOML: '%s'", path)
 	if err := toml.Unmarshal(dat, iface); err != nil {
 		return fmt.Errorf("While reading in the TOML file '%s': %v", path, err)
 	}
+	glog.Infof("Passed readTOML log 2 point, '%s'", path)
+
 	glog.V(1).Infof("Parsed '%s' to: %+v", path, iface)
 
 	return nil
@@ -162,12 +170,15 @@ type programParameters struct {
 // line.
 func (p *programParameters) makeAccount() *cf.Account {
 	var acct cf.Account
+	glog.Infof("Passed makeAccount log 0 point part 1 of 2")
+	glog.Infof("Passed makeAccount log 0 point: preferencesFile:%s", p.preferencesFile)
 
 	// Command line options override settings in preferences file.
 	// Read the preferences file first, then set any command line options.
 	if p.preferencesFile != "" {
 		// read the preferences file and populate fields.
 		// Ignore any error.
+		glog.Infof("Passed makeAccount log 1 point")
 		acct = readPreferencesFile(p.preferencesFile)
 	}
 
@@ -199,6 +210,7 @@ func (p *programParameters) makeAccount() *cf.Account {
 	if p.HomeDirectory != "" {
 		acct.HomeDirectory = p.HomeDirectory
 	}
+	glog.Infof("Passed makeAccount log 2 point")
 
 	acct.LocalOnly = p.dryRun
 
@@ -206,6 +218,7 @@ func (p *programParameters) makeAccount() *cf.Account {
 		glog.Errorf("Could not make an account from arguments: %v", err)
 		return nil
 	}
+	glog.Infof("Passed makeAccount log 3 point")
 
 	return &acct
 }
@@ -378,8 +391,11 @@ func (p *programParameters) doListAll() error {
 		glog.Info(dat.TheMetadata[i].Hash + " " + dat.TheMetadata[i].FileName + " " + dat.TheMetadata[i].Filepath + " " + dat.TheMetadata[i].Mtime.String())
 	}
 
-	//save the data container to the file indicated by *saveFlag
-	writeTOML(p.datPath, &dat)
+	//if the saveFlag was set, save, otherwise only list
+	if p.datPath != "" {
+		//save the data container to the file indicated by *saveFlag
+		writeTOML(p.datPath, &dat)
+	}
 
 	return nil
 }
