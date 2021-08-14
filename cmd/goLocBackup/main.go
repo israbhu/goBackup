@@ -22,11 +22,25 @@ import (
 //	glog.V(1) represents verbose information, which is extra information non-essential to keep users updated
 //	glog.V(2) represents debug information, which is extra information useful to debug the application
 
+//***************types*************
+type commandEntry struct {
+	help string
+	fn   func(p *programParameters) error
+}
+
 //***************global variables*************
-//var cf gobackup.Account        //account credentials and preferences
-var dat gobackup.DataContainer //local datastore tracking uploads and Metadata
-var preferences string         //the location of preferences file
-var homeDirectory string       //use this location to resolve pathing instead of the PWD
+var (
+	commands = map[string]commandEntry{
+		"keys":            {help: "Get the keys and metadata from cloudflare", fn: doGetKeys},
+		"sync":            {help: "Download the keys and metadata from cloud and overwrite the local database", fn: doSync},
+		"search":          {help: "Search the local database and print to screen"},
+		"listAllFiles":    {help: "List all files in the local database", fn: doListAll},
+		"listRecentFiles": {help: "List most recent files in the local database", fn: doListRecent},
+	}
+	dat           gobackup.DataContainer //local datastore tracking uploads and Metadata
+	preferences   string                 //the location of preferences file
+	homeDirectory string                 //use this location to resolve pathing instead of the PWD
+)
 
 /* NOTES *
 filepath == filepath same file
@@ -227,20 +241,12 @@ func (p *programParameters) makeAccount() *cf.Account {
 //yes, email, Account, Data, Email, Namespace, Key, Token, Location string
 //backup strategy, zip, encrypt, verbose, sync, list data, alt pref, no pref
 func extractCommandLine() programParameters {
-	commands := map[string]string{
-		"keys":            "Get the keys and metadata from cloudflare",
-		"sync":            "Download the keys and metadata from cloud and overwrite the local database",
-		"search":          "Search the local database and print to screen",
-		"listAllFiles":    "List all files in the local database",
-		"listRecentFiles": "List most recent files in the local database",
-		"save":            "save the current data queue to the save file",
-	}
 	flag.Usage = func() {
 		var args []string
 		var desc string
 		for k, v := range commands {
 			args = append(args, k)
-			desc += fmt.Sprintf("  %s\n\t%s\n", k, v)
+			desc += fmt.Sprintf("  %s\n\t%s\n", k, v.help)
 		}
 		fmt.Fprintf(flag.CommandLine.Output(), "USAGE: goLocBackup [options] <%s>\n\n", strings.Join(args, "|"))
 		fmt.Fprintf(flag.CommandLine.Output(), "commands:\n%s\noptions:\n", desc)
@@ -275,6 +281,12 @@ func extractCommandLine() programParameters {
 
 	if l := len(flag.Args()); l != 1 {
 		fmt.Fprintf(flag.CommandLine.Output(), "ERROR: Expecting exactly one command, but %d arguments were given\n\n", l)
+		flag.Usage()
+		os.Exit(1) // print usage and exit
+	}
+
+	if _, ok := commands[flag.Arg(0)]; !ok {
+		fmt.Fprintf(flag.CommandLine.Output(), "Unknown command '%s'\n\n", flag.Arg(0))
 		flag.Usage()
 		os.Exit(1) // print usage and exit
 	}
@@ -364,7 +376,7 @@ func populatePayloadAndMeta(dat *gobackup.DataContainer, meta *gobackup.Metadata
 	dat.Count += 2
 }
 
-func (p *programParameters) doSearch() error {
+func doSearch(p *programParameters) error {
 	d := gobackup.Data{ReadOnly: p.dryRun}
 
 	d.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result")
@@ -379,7 +391,7 @@ func (p *programParameters) doSearch() error {
 
 	return nil
 }
-func (p *programParameters) doListAll() error {
+func doListAll(p *programParameters) error {
 	d := gobackup.Data{ReadOnly: p.dryRun}
 	d.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result")
 
@@ -399,7 +411,7 @@ func (p *programParameters) doListAll() error {
 
 	return nil
 }
-func (p *programParameters) doListRecent() error {
+func doListRecent(p *programParameters) error {
 	d := gobackup.Data{ReadOnly: p.dryRun}
 	d.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result")
 
@@ -439,7 +451,7 @@ func (p *programParameters) doListRecent() error {
 	return nil
 }
 
-func (p *programParameters) doGetKeys() error {
+func doGetKeys(p *programParameters) error {
 	acct := p.makeAccount()
 	if acct == nil {
 		return fmt.Errorf("Could not get keys from invalid account")
@@ -450,7 +462,7 @@ func (p *programParameters) doGetKeys() error {
 	return nil
 }
 
-func (p *programParameters) doSync() error {
+func doSync(p *programParameters) error {
 	acct := p.makeAccount()
 	if acct == nil {
 		return fmt.Errorf("Could not get keys from invalid account")
@@ -493,20 +505,11 @@ func (p *programParameters) doCommand() error {
 	gobackup.AddLock()
 	defer gobackup.DeleteLock()
 
-	switch p.command {
-	case "search":
-		return p.doSearch()
-	case "listAllFiles":
-		return p.doListAll()
-	case "listRecentFiles":
-		return p.doListRecent()
-	case "keys":
-		return p.doGetKeys()
-	case "sync":
-		return p.doSync()
-	default:
+	e, ok := commands[p.command]
+	if !ok {
 		return fmt.Errorf("BUG: unknown command '%s'", p.command)
 	}
+	return e.fn(p)
 }
 
 func main() {
