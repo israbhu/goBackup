@@ -148,7 +148,7 @@ func UploadMultiPart(cf *Account, meta gobackup.Metadata) bool {
 
 	jsonBytes, err := json.Marshal(meta)
 	if err != nil {
-		gobackup.DeleteLock()
+		// FIXME Do not fatal
 		glog.Fatalf("Could not marshal metadata %+v: %v", meta, err)
 	}
 	formWriter.Write(jsonBytes) //send metadata
@@ -251,7 +251,7 @@ func UploadKV(cf *Account, meta gobackup.Metadata) bool {
 		//copy up to 24MB using the pipereader
 		written, err := io.CopyN(&fileUpload, pr, 24*1024*1024)
 		if err != nil && err != io.EOF {
-			gobackup.DeleteLock()
+			// FIXME Do not fatal
 			glog.Fatalf("Bytes written: %d, err: %v\n", written, err)
 		}
 

@@ -36,6 +36,7 @@ var (
 		"search":          {help: "Search the local database and print to screen"},
 		"listAllFiles":    {help: "List all files in the local database", fn: doListAll},
 		"listRecentFiles": {help: "List most recent files in the local database", fn: doListRecent},
+		"upload":          {help: "Uploads the locations indicated via preferences or commandline", fn: doUpload},
 	}
 	dat           gobackup.DataContainer //local datastore tracking uploads and Metadata
 	preferences   string                 //the location of preferences file
@@ -156,7 +157,6 @@ func getFiles(name string, f *[]string) error {
 		if !gobackup.NoErrorFound(err, "") {
 			basedir, _ := os.Getwd()
 
-			gobackup.DeleteLock()
 			return fmt.Errorf("Cannot find %v. Closing the program!: %v", filepath.Join(basedir, path), err)
 		}
 		//remove .
@@ -500,50 +500,19 @@ func doSync(p *programParameters) error {
 	}
 	return nil
 }
-
-func (p *programParameters) doCommand() error {
-	gobackup.AddLock()
-	defer gobackup.DeleteLock()
-
-	e, ok := commands[p.command]
-	if !ok {
-		return fmt.Errorf("BUG: unknown command '%s'", p.command)
-	}
-	return e.fn(p)
-}
-
-func main() {
-	//command line can overwrite the data from the preferences file
-	p := extractCommandLine()
-	cf := p.makeAccount()
-	if cf == nil {
-		glog.Fatalf("Could not determine account information")
-	}
-
-	if err := p.doCommand(); err != nil {
-		os.Exit(1)
-	}
-
-	pref, _ := filepath.Abs(p.preferencesFile)
-
-	gobackup.ChangeHomeDirectory(cf.HomeDirectory)
-	glog.V(1).Infof("Checking that directory is below home! Directory:%v result:%t", pref, gobackup.CheckPath(pref, cf.HomeDirectory))
-
-	//prevent other local gobackup instances from altering critical files
-	gobackup.AddLock()
-	defer gobackup.DeleteLock()
-
+func doUpload(p *programParameters) error {
 	//the filelist for backup
 	var fileList []string
 
 	glog.V(1).Infof("CF LOCATION:%v", p.Location)
 
 	backupLocations := strings.Split(p.Location, ",")
+	// TODO canonicalize each and check they are under home directory.
 
 	for _, l := range backupLocations {
 		if err := getFiles(strings.TrimSpace(l), &fileList); err != nil {
-			glog.Errorf("Fatal error while getting files to back up: %v", err)
-			return
+			glog.Warningf("While getting files to back up: %v", err)
+			continue
 		}
 	}
 
@@ -576,17 +545,50 @@ func main() {
 	//TheMetadata is empty, then there is no work left to be done. Exit program
 	if len(dat.TheMetadata) == 0 {
 		glog.Infoln("All files are up to date! Exiting!")
-		gobackup.DeleteLock()
-		os.Exit(0)
+		return nil
 	}
 
 	//information for user
 	glog.Infof("Backing up %v Files, Data Size: %v", dat.Count, dat.DataSize)
 
 	//split the work and backup
-	backup(p)
+	backup(*p)
 
 	d := gobackup.Data{ReadOnly: p.dryRun}
 	//update the local data file
 	d.DataFile2("data.dat", &dat)
+
+	return nil
+}
+
+func (p *programParameters) doCommand() error {
+	if p == nil {
+		return fmt.Errorf("BUG: Empty program parameters")
+	}
+	gobackup.AddLock()
+	defer gobackup.DeleteLock()
+
+	e, ok := commands[p.command]
+	if !ok {
+		return fmt.Errorf("BUG: unknown command '%s'", p.command)
+	}
+	return e.fn(p)
+}
+
+func main() {
+	//command line can overwrite the data from the preferences file
+	p := extractCommandLine()
+	cf := p.makeAccount()
+	if cf == nil {
+		glog.Fatalf("Could not determine account information")
+	}
+
+	if err := os.Chdir(cf.HomeDirectory); err != nil {
+		glog.Fatalf("Could not change working directory to home directory '%s': %v", cf.HomeDirectory, err)
+	}
+
+	if err := p.doCommand(); err != nil {
+		os.Exit(1)
+	}
+
 } //main

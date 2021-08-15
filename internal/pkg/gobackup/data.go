@@ -34,7 +34,7 @@ func hashToString(in []byte) string {
 func Md5file(in string) string {
 	dat, err := ioutil.ReadFile(in)
 	if err != nil {
-		DeleteLock()
+		// FIXME Do not fatal
 		glog.Fatalf("md5 failed")
 	}
 	data := md5.Sum(dat)
@@ -45,7 +45,7 @@ func Md5file(in string) string {
 func Md5fileAndMeta(in string) string {
 	dat, err := ioutil.ReadFile(in)
 	if err != nil {
-		DeleteLock()
+		// FIXME Do not fatal
 		glog.Fatalf("while generating hash for file and metadata: %v", err)
 	}
 
@@ -85,7 +85,7 @@ func (d *Data) DataFile2(file string, dat *DataContainer) {
 		glog.Infoln("Opening the data.dat file!")
 		theFile, err = os.OpenFile(file, os.O_APPEND|os.O_CREATE, 0644)
 		if err != nil {
-			DeleteLock()
+			// FIXME Do not fatal
 			glog.Fatalf("problem opening file '%s': %v", file, err)
 		}
 	}
@@ -224,7 +224,7 @@ func (d *Data) openLocalDatabase(file string, sort string, dat *DataContainer) {
 		glog.Infoln("Opening the " + file + " file!")
 		theFile, err = os.OpenFile(file, os.O_APPEND|os.O_CREATE, 0644)
 		if err != nil {
-			DeleteLock()
+			// FIXME Do not fatal
 			glog.Fatalf("problem opening file '%s': %v", file, err)
 		}
 	}
@@ -350,33 +350,9 @@ func MakeCanonicalPath(path string) (string, error) {
 	return ret, nil
 }
 
-//attempt to change the current working directory as follows:
-//to the home directory in preferences, detected home directory, or allow to use CWD
-func ChangeHomeDirectory(path string) {
-	if path != "" {
-		glog.V(1).Info("Home directory found! Setting home path to: '%s'", path)
-		os.Chdir(path)
-	} else {
-		test, err := os.UserHomeDir()
-		if err != nil {
-			glog.V(1).Info("Home directory not found. User Home directory not found. Using Current directory.")
-			return
-		}
-		glog.V(1).Info("User home directory found! Setting home path to:" + test)
-		os.Chdir(test)
-	}
-}
-
+// TODO make a canonicalPathString type?
 //check that the path is not above the home directory
 func CheckPath(path, homePath string) bool {
 	glog.V(1).Infof("checking path for: %s", path)
-	if path != "" {
-		return strings.HasPrefix(path, homePath)
-	} else if ret, err := os.UserHomeDir(); err == nil { //otherwise try to get the user home directory
-		return strings.HasPrefix(path, ret)
-	} else if ret, err := os.Getwd(); err == nil { //otherwise try and use current directory
-		return strings.HasPrefix(path, ret)
-	} else { //everything fails, return false
-		return false
-	}
+	return strings.HasPrefix(path, homePath)
 }
