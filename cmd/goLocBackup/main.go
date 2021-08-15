@@ -82,10 +82,11 @@ func readPreferencesFile(path string) cf.Account {
 //check that the file is accessible since the function can be called from a commandline argument
 // The content of iface is undefined when the returned error is not nil.
 func readTOML(file string, iface interface{}) error {
-	path, err := gobackup.MakeCanonicalPath(file)
+	cp, err := gobackup.MakeCanonicalPath(file)
 	if err != nil {
 		return fmt.Errorf("While getting the canonical path for '%s': %v", file, err)
 	}
+	path := string(cp)
 
 	if _, err := os.Stat(path); err != nil {
 		return fmt.Errorf("While calling stat on file '%s': %v", path, err)
@@ -138,10 +139,11 @@ func getFiles(name string, f *[]string) error {
 		name = "."
 	}
 
-	path, err := gobackup.MakeCanonicalPath(name)
+	cp, err := gobackup.MakeCanonicalPath(name)
 	if err != nil {
 		return fmt.Errorf("While getting canonical path for '%s': %v", name, err)
 	}
+	path := string(cp)
 	if fi, err := os.Stat(path); err == nil {
 		//if it's a regular file, append and return f
 		if fi.Mode().IsRegular() {
@@ -177,6 +179,7 @@ type programParameters struct {
 	datPath         string
 	dryRun          bool
 	preferencesFile string
+	HomeDirectory   gobackup.CanonicalPathString
 	cf.Account
 }
 
@@ -221,9 +224,7 @@ func (p *programParameters) makeAccount() *cf.Account {
 	if p.Zip != "" {
 		acct.Zip = p.Zip
 	}
-	if p.HomeDirectory != "" {
-		acct.HomeDirectory = p.HomeDirectory
-	}
+
 	glog.Infof("Passed makeAccount log 2 point")
 
 	acct.LocalOnly = p.dryRun
@@ -268,7 +269,7 @@ func extractCommandLine() programParameters {
 	flag.StringVar(&p.Location, "location", "", "Use only these locations to backup")
 	// FIXME Duplicate? flag.String(&p.Location, "download", "", "Download files. By default use the preferences location. Use -location and -addLocation to modify the files downloaded.")
 	flag.StringVar(&p.Zip, "zip", "", "Set the zip compression to 'none', 'zstandard', or 'zip'")
-	flag.StringVar(&p.HomeDirectory, "home", "", "Change your home directory. All relative paths based on home directory")
+	givenHomeDir := flag.String("home", "", "Change your home directory. All relative paths based on home directory")
 	flag.StringVar(&p.datPath, "save", "", "save the current data queue to the save file")
 
 	// Force logs to stderr, as this is a command line program.
@@ -292,6 +293,14 @@ func extractCommandLine() programParameters {
 	}
 
 	p.command = flag.Arg(0)
+
+	cp, err := gobackup.MakeCanonicalPath(*givenHomeDir)
+	if *givenHomeDir == "" {
+		fmt.Fprintf(flag.CommandLine.Output(), "Home directory is empty. Please specify in preferences file or command line flag.")
+	}
+	if err != nil {
+		p.HomeDirectory = cp
+	}
 
 	return p
 }
@@ -510,6 +519,12 @@ func doUpload(p *programParameters) error {
 	// TODO canonicalize each and check they are under home directory.
 
 	for _, l := range backupLocations {
+		cp, err := gobackup.MakeCanonicalPath(l)
+		if err != nil {
+			glog.Warningf("While canonicalizing path '%s': %v", l, err)
+			continue
+		}
+		gobackup.CheckPath(cp, p.HomeDirectory)
 		if err := getFiles(strings.TrimSpace(l), &fileList); err != nil {
 			glog.Warningf("While getting files to back up: %v", err)
 			continue
@@ -583,8 +598,8 @@ func main() {
 		glog.Fatalf("Could not determine account information")
 	}
 
-	if err := os.Chdir(cf.HomeDirectory); err != nil {
-		glog.Fatalf("Could not change working directory to home directory '%s': %v", cf.HomeDirectory, err)
+	if err := os.Chdir(string(p.HomeDirectory)); err != nil {
+		glog.Fatalf("Could not change working directory to home directory '%s': %v", p.HomeDirectory, err)
 	}
 
 	if err := p.doCommand(); err != nil {

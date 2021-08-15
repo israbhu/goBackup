@@ -25,6 +25,8 @@ type MyData struct {
 	TheMetadata Metadata `json:"metadata"`
 }
 
+type CanonicalPathString string
+
 //convert hex bytes into a string
 func hashToString(in []byte) string {
 	return hex.EncodeToString(in)
@@ -334,7 +336,7 @@ type DataContainer struct {
 // MakeCanonicalPath returns an absolute path for the given path, where
 // symlinks are evaluated and the path is cleaned according to filepath.Clean.
 // The returned path is empty when error is not nil.
-func MakeCanonicalPath(path string) (string, error) {
+func MakeCanonicalPath(path string) (CanonicalPathString, error) {
 	// abs
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -347,12 +349,11 @@ func MakeCanonicalPath(path string) (string, error) {
 		return "", fmt.Errorf("While evaluating symlinks for '%s': %v", abs, err)
 	}
 
-	return ret, nil
+	return CanonicalPathString(ret), nil
 }
 
-// TODO make a canonicalPathString type?
 //check that the path is not above the home directory
-func CheckPath(path, homePath string) bool {
+func CheckPath(path, homePath CanonicalPathString) bool {
 	glog.V(1).Infof("checking path for: %s", path)
-	return strings.HasPrefix(path, homePath)
+	return strings.HasPrefix(string(path), string(homePath))
 }
