@@ -75,7 +75,7 @@ func readPreferencesFile(path string) cf.Account {
 	glog.V(1).Infof("Finished reading the preferences file, showing results: %v6", &acct)
 
 	if err != nil {
-		glog.Info("While reading the preferences file, an error was encountered:%s", err)
+		glog.Infof("While reading the preferences file, an error was encountered:%v", err)
 	}
 
 	return acct
