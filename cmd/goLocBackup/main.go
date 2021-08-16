@@ -55,10 +55,13 @@ download a specific file (use the listAllFiles to find the hash?)
 */
 //backs up the list of files
 //uploading the data should be the most time consuming portion of the program, so it will pushed into a go routine
-func backup(p programParameters) {
+func backup(p programParameters) error {
 	for _, list := range dat.TheMetadata {
-		cf.UploadMultiPart(&p.Account, list)
+		if err := cf.UploadMultiPart(&p.Account, list); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // Reads the preferences file at the given path.
@@ -308,7 +311,7 @@ func extractCommandLine() programParameters {
 //search the data file for hash, line by line
 //hash is the hash from a file, fileName is a file
 //in the future, may introduce a binary search or a simple index for a pre-sorted data file
-func searchData(hash string) bool {
+func searchData(hash string) (bool, error) {
 
 	file, err := os.Open("data.dat")
 	if err != nil {
@@ -316,7 +319,7 @@ func searchData(hash string) bool {
 			glog.V(1).Info("data.dat file Does Not Exist. Creating a new data.dat file!")
 			file, err = os.Create("data.dat")
 			if !gobackup.NoErrorFound(err, "searchData failed to create data.dat!") {
-				glog.Fatal("Closing program!")
+				return false, fmt.Errorf("searchData failed to create data.dat!: %v", err)
 			}
 		} else {
 			gobackup.NoErrorFound(err, "searchData failed opening file:data.dat")
@@ -332,10 +335,10 @@ func searchData(hash string) bool {
 		column := strings.Split(line, ":") //split out the data
 
 		if column[0] == hash {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 //add a 0byte data entry to cloudflare workersKV.
@@ -388,7 +391,9 @@ func populatePayloadAndMeta(dat *gobackup.DataContainer, meta *gobackup.Metadata
 func doSearch(p *programParameters) error {
 	d := gobackup.Data{ReadOnly: p.dryRun}
 
-	d.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result")
+	if err := d.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result"); err != nil {
+		return err
+	}
 
 	glog.Info("Displaying sorted dat")
 	sort.Sort(gobackup.ByFilepath(dat.TheMetadata))
@@ -402,7 +407,9 @@ func doSearch(p *programParameters) error {
 }
 func doListAll(p *programParameters) error {
 	d := gobackup.Data{ReadOnly: p.dryRun}
-	d.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result")
+	if err := d.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result"); err != nil {
+		return err
+	}
 
 	glog.Info("Displaying sorted dat")
 	sort.Sort(gobackup.ByFilepath(dat.TheMetadata))
@@ -422,7 +429,9 @@ func doListAll(p *programParameters) error {
 }
 func doListRecent(p *programParameters) error {
 	d := gobackup.Data{ReadOnly: p.dryRun}
-	d.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result")
+	if err := d.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result"); err != nil {
+		return err
+	}
 
 	glog.Info("Displaying sorted dat")
 	sort.Sort(gobackup.ByFilepath(dat.TheMetadata))
@@ -467,7 +476,11 @@ func doGetKeys(p *programParameters) error {
 	}
 	//get keys
 	glog.Infoln("Getting the keys and metadata!")
-	glog.Infoln(string(acct.GetKVkeys()))
+	keys, err := acct.GetKVkeys()
+	if err != nil {
+		return err
+	}
+	glog.Infoln(string(keys))
 	return nil
 }
 
@@ -478,7 +491,10 @@ func doSync(p *programParameters) error {
 	}
 	//get keys
 	glog.Infoln("Getting the keys and metadata!")
-	jsonKeys := acct.GetKVkeys()
+	jsonKeys, err := acct.GetKVkeys()
+	if err != nil {
+		return err
+	}
 	glog.Infof("jsonKeys:%s", jsonKeys)
 
 	var extractedData cf.CloudflareResponse
@@ -535,8 +551,14 @@ func doUpload(p *programParameters) error {
 
 	//fill in the Metadata
 	for _, f := range fileList {
-		hash := gobackup.Md5file(f)
-		hashContentAndMeta := gobackup.Md5fileAndMeta(f)
+		hash, err := gobackup.Md5file(f)
+		if err != nil {
+			return err
+		}
+		hashContentAndMeta, err := gobackup.Md5fileAndMeta(f)
+		if err != nil {
+			return err
+		}
 
 		//debug info
 		if glog.V(2) {
@@ -545,16 +567,34 @@ func doUpload(p *programParameters) error {
 			glog.Infof("For Loop: (f:%v)(hash:%v)(contents:%v)", f, hash, string(contents))
 		}
 		//if content hash not found, need two entries 1, content hash, 2, content and meta hash
-		if !searchData(hash) {
-			meta := gobackup.CreateMeta(f)
-			populatePayloadAndMeta(&dat, &meta, hashContentAndMeta)
-		} else if !searchData(hashContentAndMeta) { //content hash was found, so now check for content and meta hash
-			meta := gobackup.CreateMeta(f)
-			populateFK(&dat, &meta, hashContentAndMeta)
-
-		} else { //all Hashes for the file were in the local database. Exclude from uploading
-			glog.V(1).Infoln("FOUND AND EXCLUDING! " + f + " " + hash)
+		ok, err := searchData(hash)
+		if err != nil {
+			return err
 		}
+		if !ok {
+			meta, err := gobackup.CreateMeta(f)
+			if err != nil {
+				return err
+			}
+			populatePayloadAndMeta(&dat, &meta, hashContentAndMeta)
+			continue
+		}
+		ok, err = searchData(hashContentAndMeta)
+		if err != nil {
+			return err
+		}
+		if !ok { //content hash was found, so now check for content and meta hash
+			meta, err := gobackup.CreateMeta(f)
+			if err != nil {
+				return err
+			}
+			populateFK(&dat, &meta, hashContentAndMeta)
+			continue
+
+		}
+
+		//all Hashes for the file were in the local database. Exclude from uploading
+		glog.V(1).Infoln("FOUND AND EXCLUDING! " + f + " " + hash)
 	} //for
 
 	//TheMetadata is empty, then there is no work left to be done. Exit program
@@ -567,7 +607,9 @@ func doUpload(p *programParameters) error {
 	glog.Infof("Backing up %v Files, Data Size: %v", dat.Count, dat.DataSize)
 
 	//split the work and backup
-	backup(*p)
+	if err := backup(*p); err != nil {
+		return err
+	}
 
 	d := gobackup.Data{ReadOnly: p.dryRun}
 	//update the local data file
@@ -576,12 +618,25 @@ func doUpload(p *programParameters) error {
 	return nil
 }
 
-func (p *programParameters) doCommand() error {
+// The error is a named return value, so that it is in scope for a deferred
+// function.
+func (p *programParameters) doCommand() (err error) {
 	if p == nil {
 		return fmt.Errorf("BUG: Empty program parameters")
 	}
-	gobackup.AddLock()
-	defer gobackup.DeleteLock()
+	if err := gobackup.AddLock(); err != nil {
+		return err
+	}
+	defer func() {
+		if delErr := gobackup.DeleteLock(); delErr != nil {
+			// Wrap any existing error with this one.
+			if err != nil {
+				err = fmt.Errorf("%w; Additional error while deleting lock file: %v", err, delErr)
+			} else {
+				err = delErr
+			}
+		}
+	}()
 
 	e, ok := commands[p.command]
 	if !ok {
