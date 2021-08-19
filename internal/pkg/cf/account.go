@@ -14,7 +14,7 @@ type Account struct {
 	// Token is used instead of the key and created on cloudflare at https://dash.cloudflare.com/profile/api-tokens
 	// email is the email associated with your cloudflare account
 
-	AccountID, Data, Email, Namespace, Key, Token, Location, Zip, Backup, HomeDirectory string
+	AccountID, Data, Email, Namespace, Key, Token, Location, Zip, Backup string
 
 	// Whether to disable all network interactions.
 	LocalOnly bool
@@ -36,9 +36,6 @@ func (a *Account) Validate() error {
 	}
 	if a.Key == "" && a.Token == "" {
 		msgs = append(msgs, "Key and Token are empty. Please specify in preferences file or command line flag.")
-	}
-	if a.HomeDirectory == "" {
-		msgs = append(msgs, "Home directory is empty. Please specify in preferences file or command line flag.")
 	}
 
 	if len(msgs) > 0 {

@@ -10,21 +10,21 @@ import (
 )
 
 //creates a lock file for data.dat
-func AddLock() {
+func AddLock() error {
 	//	lockPath, err := MakeCanonicalPath("lock.pid")
 	lockPath, err := filepath.Abs("lock.pid")
 
 	if err != nil {
-		glog.Fatalf("While trying to create lock file 'lock.pid': %v", err)
+		return fmt.Errorf("While trying to create lock file 'lock.pid': %v", err)
 	}
 	//if exist
 	if _, err := os.Stat(lockPath); err == nil {
 		//add nuances here
-		glog.Fatalf("Data.dat has been locked for access. Please properly close the other program. If you wish to delete the lock manually, delete 'lock.pid'.")
+		return fmt.Errorf("Data.dat has been locked for access. Please properly close the other program. If you wish to delete the lock manually, delete 'lock.pid'.")
 	}
 	lockfile, err := os.Create(lockPath)
 	if err != nil {
-		glog.Fatalf("There was an error creating '%s': %v", lockPath, err)
+		return fmt.Errorf("There was an error creating '%s': %v", lockPath, err)
 	}
 	defer lockfile.Close()
 
@@ -34,21 +34,23 @@ func AddLock() {
 		glog.Errorf("Error writing to the lock file '%s': %v", lockPath, err)
 		lockfile.Close()
 		if err := os.Remove(lockPath); err != nil {
-			glog.Fatalf("While cleaning up lock file '%s': %v", lockPath, err)
+			return fmt.Errorf("While cleaning up lock file '%s': %v", lockPath, err)
 		}
 	}
+	return nil
 }
 
 //creates a lock file for data.dat
-func DeleteLock() {
+func DeleteLock() error {
 	lockPath, err := MakeCanonicalPath("lock.pid")
 	if err != nil {
-		glog.Fatalf("While trying to delete lock file 'lock.pid': %v", err)
+		return fmt.Errorf("While trying to delete lock file 'lock.pid': %v", err)
 	}
 	glog.Infof("Attempting to delete '%s'", lockPath)
 	if err := os.Remove("lock.pid"); err != nil {
-		glog.Fatalf("While deleting lock file '%s': %v", lockPath, err)
+		return fmt.Errorf("While deleting lock file '%s': %v", lockPath, err)
 	}
+	return nil
 }
 
 //checks for errors

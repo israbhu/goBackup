@@ -25,34 +25,38 @@ type MyData struct {
 	TheMetadata Metadata `json:"metadata"`
 }
 
+type CanonicalPathString string
+
 //convert hex bytes into a string
 func hashToString(in []byte) string {
 	return hex.EncodeToString(in)
 }
 
 //run md5 hash on a file
-func Md5file(in string) string {
+func Md5file(in string) (string, error) {
 	dat, err := ioutil.ReadFile(in)
 	if err != nil {
-		DeleteLock()
-		glog.Fatalf("md5 failed")
+		return "", fmt.Errorf("md5 failed: %v", err)
 	}
 	data := md5.Sum(dat)
-	return hashToString(data[:])
+	return hashToString(data[:]), nil
 }
 
 //run md5 hash on a file contents and metadata
-func Md5fileAndMeta(in string) string {
+func Md5fileAndMeta(in string) (string, error) {
 	dat, err := ioutil.ReadFile(in)
 	if err != nil {
-		DeleteLock()
-		glog.Fatalf("while generating hash for file and metadata: %v", err)
+		return "", fmt.Errorf("while generating hash for file and metadata: %v", err)
 	}
 
-	result := fmt.Sprintf("%v%v", string(dat), CreateMeta(in))
+	meta, err := CreateMeta(in)
+	if err != nil {
+		return "", err
+	}
+	result := fmt.Sprintf("%v%v", string(dat), meta)
 	glog.V(2).Infof("CONTENT AND META******%v******\n\n", result)
 	data := md5.Sum([]byte(result))
-	return hashToString(data[:])
+	return hashToString(data[:]), nil
 }
 
 /*
@@ -74,7 +78,7 @@ func BuildData2(a *DataContainer) ([]byte, error) {
 }
 */
 //create a data file from data struct
-func (d *Data) DataFile2(file string, dat *DataContainer) {
+func (d *Data) DataFile2(file string, dat *DataContainer) error {
 	var theFile io.ReadWriter
 	var err error
 
@@ -85,8 +89,7 @@ func (d *Data) DataFile2(file string, dat *DataContainer) {
 		glog.Infoln("Opening the data.dat file!")
 		theFile, err = os.OpenFile(file, os.O_APPEND|os.O_CREATE, 0644)
 		if err != nil {
-			DeleteLock()
-			glog.Fatalf("problem opening file '%s': %v", file, err)
+			return fmt.Errorf("problem opening file '%s': %v", file, err)
 		}
 	}
 
@@ -100,28 +103,32 @@ func (d *Data) DataFile2(file string, dat *DataContainer) {
 	}
 	datawriter.Flush()
 
+	return nil
 }
 
 //extracts the Metadata from a file
-func CreateMeta(file string) Metadata {
+func CreateMeta(file string) (Metadata, error) {
+	var temp Metadata
+
 	fi, err := os.Lstat(file)
 	if err != nil {
-		glog.Fatalln(err)
+		return temp, err
 	}
-
-	var temp Metadata
 
 	glog.Infof("permissions: %#o\n", fi.Mode().Perm()) // 0400, 0777, etc.
 
 	temp.FileName = file
-	temp.Hash = Md5file(file)
+	temp.Hash, err = Md5file(file)
+	if err != nil {
+		return temp, err
+	}
 	temp.ForeignKey = ""
 	temp.FileNum = 0
 	temp.FileInfo = "f1o1"
 	temp.Mtime = fi.ModTime()
 	temp.Permissions = fi.Mode().Perm().String()
 	temp.Size = fi.Size()
-	return temp
+	return temp, nil
 }
 
 //convert from Metadata to a string
@@ -203,16 +210,17 @@ func StringToMetadata(stringMeta string) Metadata {
 //order will reorder the results asc (ascending), desc (descending), none (as entered)
 //result allows you to add formatting to the result string
 //the result string should be able to be outputted to standard out or a file to be used in combination with the download option
-func (d *Data) SearchLocalDatabase(dat *DataContainer, file string, method string, key string, order string, result string) string {
-	d.openLocalDatabase(file, "byHash", dat)
-	//	fmt.Println(dat)
-	return ""
+func (d *Data) SearchLocalDatabase(dat *DataContainer, file string, method string, key string, order string, result string) error {
+	if err := d.openLocalDatabase(file, "byHash", dat); err != nil {
+		return err
+	}
+	return nil
 }
 
 //open the local database and sort it
 //file should be a string pointing to the file
 //sort is the preferred sort method run on the data
-func (d *Data) openLocalDatabase(file string, sort string, dat *DataContainer) {
+func (d *Data) openLocalDatabase(file string, sort string, dat *DataContainer) error {
 
 	var theFile io.ReadWriter
 	var err error
@@ -224,8 +232,7 @@ func (d *Data) openLocalDatabase(file string, sort string, dat *DataContainer) {
 		glog.Infoln("Opening the " + file + " file!")
 		theFile, err = os.OpenFile(file, os.O_APPEND|os.O_CREATE, 0644)
 		if err != nil {
-			DeleteLock()
-			glog.Fatalf("problem opening file '%s': %v", file, err)
+			return fmt.Errorf("problem opening file '%s': %v", file, err)
 		}
 	}
 
@@ -250,6 +257,7 @@ func (d *Data) openLocalDatabase(file string, sort string, dat *DataContainer) {
 		line, err = datareader.ReadString('\n')
 	}
 	glog.Infof("%v meta was loaded into the container\n", len(dat.TheMetadata))
+	return nil
 }
 
 type Stream string
@@ -334,7 +342,7 @@ type DataContainer struct {
 // MakeCanonicalPath returns an absolute path for the given path, where
 // symlinks are evaluated and the path is cleaned according to filepath.Clean.
 // The returned path is empty when error is not nil.
-func MakeCanonicalPath(path string) (string, error) {
+func MakeCanonicalPath(path string) (CanonicalPathString, error) {
 	// abs
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -347,36 +355,11 @@ func MakeCanonicalPath(path string) (string, error) {
 		return "", fmt.Errorf("While evaluating symlinks for '%s': %v", abs, err)
 	}
 
-	return ret, nil
-}
-
-//attempt to change the current working directory as follows:
-//to the home directory in preferences, detected home directory, or allow to use CWD
-func ChangeHomeDirectory(path string) {
-	if path != "" {
-		glog.V(1).Info("Home directory found! Setting home path to: '%s'", path)
-		os.Chdir(path)
-	} else {
-		test, err := os.UserHomeDir()
-		if err != nil {
-			glog.V(1).Info("Home directory not found. User Home directory not found. Using Current directory.")
-			return
-		}
-		glog.V(1).Info("User home directory found! Setting home path to:" + test)
-		os.Chdir(test)
-	}
+	return CanonicalPathString(ret), nil
 }
 
 //check that the path is not above the home directory
-func CheckPath(path, homePath string) bool {
+func CheckPath(path, homePath CanonicalPathString) bool {
 	glog.V(1).Infof("checking path for: %s", path)
-	if path != "" {
-		return strings.HasPrefix(path, homePath)
-	} else if ret, err := os.UserHomeDir(); err == nil { //otherwise try to get the user home directory
-		return strings.HasPrefix(path, ret)
-	} else if ret, err := os.Getwd(); err == nil { //otherwise try and use current directory
-		return strings.HasPrefix(path, ret)
-	} else { //everything fails, return false
-		return false
-	}
+	return strings.HasPrefix(string(path), string(homePath))
 }

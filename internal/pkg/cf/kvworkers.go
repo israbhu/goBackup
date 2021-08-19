@@ -19,7 +19,7 @@ import (
 var wg sync.WaitGroup
 
 //get the stored keys on the account
-func (cf *Account) GetKVkeys() []byte {
+func (cf *Account) GetKVkeys() ([]byte, error) {
 	client := &http.Client{}
 
 	//buffer to store our request body as bytes
@@ -34,7 +34,7 @@ func (cf *Account) GetKVkeys() []byte {
 	//get request to get the key data
 	req, err := http.NewRequest("GET", request, &requestBody)
 	if err != nil {
-		glog.Fatalln(err)
+		return nil, err
 	}
 
 	//set the content type
@@ -52,12 +52,12 @@ func (cf *Account) GetKVkeys() []byte {
 	req.Header.Set("X-Auth-Email", cf.Email)
 
 	if cf.LocalOnly {
-		return []byte("dry run")
+		return []byte("dry run"), nil
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		glog.Fatalln(err)
+		return nil, err
 	}
 
 	//debug information
@@ -68,7 +68,7 @@ func (cf *Account) GetKVkeys() []byte {
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		glog.Fatalln(err)
+		return nil, err
 	}
 
 	//verbose information showing the "response" json data
@@ -76,11 +76,10 @@ func (cf *Account) GetKVkeys() []byte {
 	glog.V(1).Infoln("Response Body: " + string(body))
 	//	fmt.Println("Response Body: " + string(body))
 
-	return body
+	return body, nil
 }
 
-//func UploadMultiPart(client *http.Client, url string, values map[string]io.Reader, filename string) (err error) {
-func UploadMultiPart(cf *Account, meta gobackup.Metadata) bool {
+func UploadMultiPart(cf *Account, meta gobackup.Metadata) error {
 
 	filename := meta.FileName
 	//max value size = 25 mb
@@ -99,7 +98,7 @@ func UploadMultiPart(cf *Account, meta gobackup.Metadata) bool {
 	//create the name="value" part of the upload
 	formWriter, err := w.CreateFormFile("value", filename)
 	if err != nil {
-		glog.Fatalln(err)
+		return err
 	}
 
 	//if the foreign key is blank, we need to upload stuff
@@ -134,8 +133,7 @@ func UploadMultiPart(cf *Account, meta gobackup.Metadata) bool {
 		//copy up to 24MB using the pipereader
 		written, err := io.CopyN(formWriter, pr, 24*1024*1024)
 		if err != nil && err != io.EOF {
-			glog.Infof("Err != nil, Bytes written:%v", written)
-			glog.Fatalln(err)
+			return fmt.Errorf("Err != nil, %d Bytes written: %v", written, err)
 		}
 
 		glog.Infof("%v encoded %v bytes\n", cf.Zip, written)
@@ -143,13 +141,12 @@ func UploadMultiPart(cf *Account, meta gobackup.Metadata) bool {
 
 	formWriter, err = w.CreateFormField("metadata")
 	if err != nil {
-		glog.Fatalln(err)
+		return err
 	}
 
 	jsonBytes, err := json.Marshal(meta)
 	if err != nil {
-		gobackup.DeleteLock()
-		glog.Fatalf("Could not marshal metadata %+v: %v", meta, err)
+		return fmt.Errorf("Could not marshal metadata %+v: %v", meta, err)
 	}
 	formWriter.Write(jsonBytes) //send metadata
 
@@ -168,7 +165,7 @@ func UploadMultiPart(cf *Account, meta gobackup.Metadata) bool {
 	//put request to upload the data
 	req, err := http.NewRequest(http.MethodPut, request, &fileUpload)
 	if err != nil {
-		glog.Fatalln(err)
+		return err
 	}
 
 	// Don't forget to set the content type, this will contain the boundary.
@@ -185,11 +182,11 @@ func UploadMultiPart(cf *Account, meta gobackup.Metadata) bool {
 	glog.V(2).Infof("Request to be sent: %q\n", fmt.Sprintf("%+v", req))
 
 	if cf.LocalOnly {
-		return true
+		return nil
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		glog.Fatalln(err)
+		return err
 	}
 
 	glog.V(2).Infoln(resp)
@@ -199,23 +196,26 @@ func UploadMultiPart(cf *Account, meta gobackup.Metadata) bool {
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		glog.Fatalln(err)
+		return err
 	}
 	json.Unmarshal(body, &response)
 
-	if !response.Success && bool(glog.V(2)) {
-		glog.Infoln("***Body of response***")
-		glog.Infoln(string(body))
-		glog.Infoln("***End Body of response***")
-		glog.Infoln("File was not uploaded, exiting")
-		glog.Fatalln("No upload!")
+	if !response.Success {
+		if bool(glog.V(2)) {
+			glog.Infoln("***Body of response***")
+			glog.Infoln(string(body))
+			glog.Infoln("***End Body of response***")
+			glog.Infoln("File was not uploaded, exiting")
+		}
+		return fmt.Errorf("No upload!")
 	} else {
 		glog.Infof("Successfully uploaded %v\n", filename)
 	}
 	//wait for all uploads and downloads to complete
+	// FIXME This wait group may not have anything in it.
 	wg.Wait()
 
-	return true
+	return nil
 
 }
 
@@ -223,7 +223,10 @@ func UploadMultiPart(cf *Account, meta gobackup.Metadata) bool {
 //filename is a string with the drive location of a file to be uploaded
 //hash is the hash of the file
 //A normal hash should be 16 bytes and anything larger indicates the file has been split amoung several files. The additional length is the file number appended to the hash
-
+// FIXME The only caller of this function is the function itself. Being
+// launched recursively and concurrently makes it very difficult to return an
+// value or an error. This function should probably be rewritten, and it should
+// not panic on error.
 func UploadKV(cf *Account, meta gobackup.Metadata) bool {
 
 	filename := meta.FileName
@@ -251,8 +254,8 @@ func UploadKV(cf *Account, meta gobackup.Metadata) bool {
 		//copy up to 24MB using the pipereader
 		written, err := io.CopyN(&fileUpload, pr, 24*1024*1024)
 		if err != nil && err != io.EOF {
-			gobackup.DeleteLock()
-			glog.Fatalf("Bytes written: %d, err: %v\n", written, err)
+			glog.Errorf("Bytes written: %d, err: %v\n", written, err)
+			return false
 		}
 
 		//if written is exactly at the maximum N, then we haven't finished using the data in the pipe
@@ -274,7 +277,8 @@ func UploadKV(cf *Account, meta gobackup.Metadata) bool {
 		//copy up to 24MB using the pipereader
 		written, err := io.CopyN(&fileUpload, meta.PR, 24*1024*1024)
 		if err != nil {
-			glog.Fatalln(err)
+			glog.Errorln(err)
+			return false
 		}
 
 		//if written is exactly at the maximum N, then we haven't finished using the data in the pipe
@@ -300,7 +304,8 @@ func UploadKV(cf *Account, meta gobackup.Metadata) bool {
 	//put request to upload the data
 	req, err := http.NewRequest(http.MethodPut, request, &fileUpload)
 	if err != nil {
-		glog.Fatalln(err)
+		glog.Errorln(err)
+		return false
 	}
 
 	//set the content type -- to verify
@@ -318,7 +323,8 @@ func UploadKV(cf *Account, meta gobackup.Metadata) bool {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		glog.Fatalln(err)
+		glog.Errorln(err)
+		return false
 	}
 
 	glog.Infoln(resp)
@@ -326,7 +332,8 @@ func UploadKV(cf *Account, meta gobackup.Metadata) bool {
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		glog.Fatalln(err)
+		glog.Errorln(err)
+		return false
 	}
 	glog.Infoln(string(body))
 	glog.Infoln("Done with uploadKV")
@@ -340,7 +347,8 @@ func UploadKV(cf *Account, meta gobackup.Metadata) bool {
 //implementation of the workers kv download
 //dataKey should be a unique md5 key used as the primary key on cloudflare
 //filepath is the path to create the downloaded file
-func DownloadKV(cf *Account, dataKey string, downloadPath string) bool {
+// FIXME There are no callers of this function.
+func DownloadKV(cf *Account, dataKey string, downloadPath string) error {
 
 	client := &http.Client{}
 
@@ -353,7 +361,7 @@ func DownloadKV(cf *Account, dataKey string, downloadPath string) bool {
 	*/
 	req, err := http.NewRequest("GET", request, nil)
 	if err != nil {
-		glog.Fatalln(err)
+		return err
 	}
 
 	glog.Infoln("REQUEST:" + request)
@@ -371,11 +379,11 @@ func DownloadKV(cf *Account, dataKey string, downloadPath string) bool {
 	req.Header.Set("X-Auth-Email", cf.Email)
 
 	if cf.LocalOnly {
-		return true
+		return nil
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		glog.Fatalln(err)
+		return err
 	}
 
 	glog.V(2).Infoln(resp)
@@ -394,8 +402,7 @@ func DownloadKV(cf *Account, dataKey string, downloadPath string) bool {
 		glog.Infoln(err)
 	}
 
-	return true
-	//	return ("Done Downloading!")
+	return nil
 
 }
 

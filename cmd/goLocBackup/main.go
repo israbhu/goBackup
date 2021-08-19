@@ -22,11 +22,26 @@ import (
 //	glog.V(1) represents verbose information, which is extra information non-essential to keep users updated
 //	glog.V(2) represents debug information, which is extra information useful to debug the application
 
+//***************types*************
+type commandEntry struct {
+	help string
+	fn   func(p *programParameters) error
+}
+
 //***************global variables*************
-//var cf gobackup.Account        //account credentials and preferences
-var dat gobackup.DataContainer //local datastore tracking uploads and Metadata
-var preferences string         //the location of preferences file
-var homeDirectory string       //use this location to resolve pathing instead of the PWD
+var (
+	commands = map[string]commandEntry{
+		"keys":            {help: "Get the keys and metadata from cloudflare", fn: doGetKeys},
+		"sync":            {help: "Download the keys and metadata from cloud and overwrite the local database", fn: doSync},
+		"search":          {help: "Search the local database and print to screen"},
+		"listAllFiles":    {help: "List all files in the local database", fn: doListAll},
+		"listRecentFiles": {help: "List most recent files in the local database", fn: doListRecent},
+		"upload":          {help: "Uploads the locations indicated via preferences or commandline", fn: doUpload},
+	}
+	dat           gobackup.DataContainer //local datastore tracking uploads and Metadata
+	preferences   string                 //the location of preferences file
+	homeDirectory string                 //use this location to resolve pathing instead of the PWD
+)
 
 /* NOTES *
 filepath == filepath same file
@@ -40,10 +55,13 @@ download a specific file (use the listAllFiles to find the hash?)
 */
 //backs up the list of files
 //uploading the data should be the most time consuming portion of the program, so it will pushed into a go routine
-func backup(p programParameters) {
+func backup(p programParameters) error {
 	for _, list := range dat.TheMetadata {
-		cf.UploadMultiPart(&p.Account, list)
+		if err := cf.UploadMultiPart(&p.Account, list); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // Reads the preferences file at the given path.
@@ -57,7 +75,7 @@ func readPreferencesFile(path string) cf.Account {
 	glog.V(1).Infof("Finished reading the preferences file, showing results: %v6", &acct)
 
 	if err != nil {
-		glog.Info("While reading the preferences file, an error was encountered:%s", err)
+		glog.Infof("While reading the preferences file, an error was encountered:%v", err)
 	}
 
 	return acct
@@ -67,10 +85,11 @@ func readPreferencesFile(path string) cf.Account {
 //check that the file is accessible since the function can be called from a commandline argument
 // The content of iface is undefined when the returned error is not nil.
 func readTOML(file string, iface interface{}) error {
-	path, err := gobackup.MakeCanonicalPath(file)
+	cp, err := gobackup.MakeCanonicalPath(file)
 	if err != nil {
 		return fmt.Errorf("While getting the canonical path for '%s': %v", file, err)
 	}
+	path := string(cp)
 
 	if _, err := os.Stat(path); err != nil {
 		return fmt.Errorf("While calling stat on file '%s': %v", path, err)
@@ -123,10 +142,11 @@ func getFiles(name string, f *[]string) error {
 		name = "."
 	}
 
-	path, err := gobackup.MakeCanonicalPath(name)
+	cp, err := gobackup.MakeCanonicalPath(name)
 	if err != nil {
 		return fmt.Errorf("While getting canonical path for '%s': %v", name, err)
 	}
+	path := string(cp)
 	if fi, err := os.Stat(path); err == nil {
 		//if it's a regular file, append and return f
 		if fi.Mode().IsRegular() {
@@ -142,7 +162,6 @@ func getFiles(name string, f *[]string) error {
 		if !gobackup.NoErrorFound(err, "") {
 			basedir, _ := os.Getwd()
 
-			gobackup.DeleteLock()
 			return fmt.Errorf("Cannot find %v. Closing the program!: %v", filepath.Join(basedir, path), err)
 		}
 		//remove .
@@ -163,6 +182,7 @@ type programParameters struct {
 	datPath         string
 	dryRun          bool
 	preferencesFile string
+	HomeDirectory   gobackup.CanonicalPathString
 	cf.Account
 }
 
@@ -207,9 +227,7 @@ func (p *programParameters) makeAccount() *cf.Account {
 	if p.Zip != "" {
 		acct.Zip = p.Zip
 	}
-	if p.HomeDirectory != "" {
-		acct.HomeDirectory = p.HomeDirectory
-	}
+
 	glog.Infof("Passed makeAccount log 2 point")
 
 	acct.LocalOnly = p.dryRun
@@ -227,20 +245,12 @@ func (p *programParameters) makeAccount() *cf.Account {
 //yes, email, Account, Data, Email, Namespace, Key, Token, Location string
 //backup strategy, zip, encrypt, verbose, sync, list data, alt pref, no pref
 func extractCommandLine() programParameters {
-	commands := map[string]string{
-		"keys":            "Get the keys and metadata from cloudflare",
-		"sync":            "Download the keys and metadata from cloud and overwrite the local database",
-		"search":          "Search the local database and print to screen",
-		"listAllFiles":    "List all files in the local database",
-		"listRecentFiles": "List most recent files in the local database",
-		"save":            "save the current data queue to the save file",
-	}
 	flag.Usage = func() {
 		var args []string
 		var desc string
 		for k, v := range commands {
 			args = append(args, k)
-			desc += fmt.Sprintf("  %s\n\t%s\n", k, v)
+			desc += fmt.Sprintf("  %s\n\t%s\n", k, v.help)
 		}
 		fmt.Fprintf(flag.CommandLine.Output(), "USAGE: goLocBackup [options] <%s>\n\n", strings.Join(args, "|"))
 		fmt.Fprintf(flag.CommandLine.Output(), "commands:\n%s\noptions:\n", desc)
@@ -262,7 +272,7 @@ func extractCommandLine() programParameters {
 	flag.StringVar(&p.Location, "location", "", "Use only these locations to backup")
 	// FIXME Duplicate? flag.String(&p.Location, "download", "", "Download files. By default use the preferences location. Use -location and -addLocation to modify the files downloaded.")
 	flag.StringVar(&p.Zip, "zip", "", "Set the zip compression to 'none', 'zstandard', or 'zip'")
-	flag.StringVar(&p.HomeDirectory, "home", "", "Change your home directory. All relative paths based on home directory")
+	givenHomeDir := flag.String("home", "", "Change your home directory. All relative paths based on home directory")
 	flag.StringVar(&p.datPath, "save", "", "save the current data queue to the save file")
 
 	// Force logs to stderr, as this is a command line program.
@@ -279,7 +289,21 @@ func extractCommandLine() programParameters {
 		os.Exit(1) // print usage and exit
 	}
 
+	if _, ok := commands[flag.Arg(0)]; !ok {
+		fmt.Fprintf(flag.CommandLine.Output(), "Unknown command '%s'\n\n", flag.Arg(0))
+		flag.Usage()
+		os.Exit(1) // print usage and exit
+	}
+
 	p.command = flag.Arg(0)
+
+	cp, err := gobackup.MakeCanonicalPath(*givenHomeDir)
+	if *givenHomeDir == "" {
+		fmt.Fprintf(flag.CommandLine.Output(), "Home directory is empty. Please specify in preferences file or command line flag.")
+	}
+	if err != nil {
+		p.HomeDirectory = cp
+	}
 
 	return p
 }
@@ -287,7 +311,7 @@ func extractCommandLine() programParameters {
 //search the data file for hash, line by line
 //hash is the hash from a file, fileName is a file
 //in the future, may introduce a binary search or a simple index for a pre-sorted data file
-func searchData(hash string) bool {
+func searchData(hash string) (bool, error) {
 
 	file, err := os.Open("data.dat")
 	if err != nil {
@@ -295,7 +319,7 @@ func searchData(hash string) bool {
 			glog.V(1).Info("data.dat file Does Not Exist. Creating a new data.dat file!")
 			file, err = os.Create("data.dat")
 			if !gobackup.NoErrorFound(err, "searchData failed to create data.dat!") {
-				glog.Fatal("Closing program!")
+				return false, fmt.Errorf("searchData failed to create data.dat!: %v", err)
 			}
 		} else {
 			gobackup.NoErrorFound(err, "searchData failed opening file:data.dat")
@@ -311,10 +335,10 @@ func searchData(hash string) bool {
 		column := strings.Split(line, ":") //split out the data
 
 		if column[0] == hash {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 //add a 0byte data entry to cloudflare workersKV.
@@ -364,10 +388,12 @@ func populatePayloadAndMeta(dat *gobackup.DataContainer, meta *gobackup.Metadata
 	dat.Count += 2
 }
 
-func (p *programParameters) doSearch() error {
+func doSearch(p *programParameters) error {
 	d := gobackup.Data{ReadOnly: p.dryRun}
 
-	d.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result")
+	if err := d.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result"); err != nil {
+		return err
+	}
 
 	glog.Info("Displaying sorted dat")
 	sort.Sort(gobackup.ByFilepath(dat.TheMetadata))
@@ -379,9 +405,11 @@ func (p *programParameters) doSearch() error {
 
 	return nil
 }
-func (p *programParameters) doListAll() error {
+func doListAll(p *programParameters) error {
 	d := gobackup.Data{ReadOnly: p.dryRun}
-	d.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result")
+	if err := d.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result"); err != nil {
+		return err
+	}
 
 	glog.Info("Displaying sorted dat")
 	sort.Sort(gobackup.ByFilepath(dat.TheMetadata))
@@ -399,9 +427,11 @@ func (p *programParameters) doListAll() error {
 
 	return nil
 }
-func (p *programParameters) doListRecent() error {
+func doListRecent(p *programParameters) error {
 	d := gobackup.Data{ReadOnly: p.dryRun}
-	d.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result")
+	if err := d.SearchLocalDatabase(&dat, "data.dat", "method", "key", "asc", "result"); err != nil {
+		return err
+	}
 
 	glog.Info("Displaying sorted dat")
 	sort.Sort(gobackup.ByFilepath(dat.TheMetadata))
@@ -439,25 +469,32 @@ func (p *programParameters) doListRecent() error {
 	return nil
 }
 
-func (p *programParameters) doGetKeys() error {
+func doGetKeys(p *programParameters) error {
 	acct := p.makeAccount()
 	if acct == nil {
 		return fmt.Errorf("Could not get keys from invalid account")
 	}
 	//get keys
 	glog.Infoln("Getting the keys and metadata!")
-	glog.Infoln(string(acct.GetKVkeys()))
+	keys, err := acct.GetKVkeys()
+	if err != nil {
+		return err
+	}
+	glog.Infoln(string(keys))
 	return nil
 }
 
-func (p *programParameters) doSync() error {
+func doSync(p *programParameters) error {
 	acct := p.makeAccount()
 	if acct == nil {
 		return fmt.Errorf("Could not get keys from invalid account")
 	}
 	//get keys
 	glog.Infoln("Getting the keys and metadata!")
-	jsonKeys := acct.GetKVkeys()
+	jsonKeys, err := acct.GetKVkeys()
+	if err != nil {
+		return err
+	}
 	glog.Infof("jsonKeys:%s", jsonKeys)
 
 	var extractedData cf.CloudflareResponse
@@ -488,25 +525,124 @@ func (p *programParameters) doSync() error {
 	}
 	return nil
 }
+func doUpload(p *programParameters) error {
+	//the filelist for backup
+	var fileList []string
 
-func (p *programParameters) doCommand() error {
-	gobackup.AddLock()
-	defer gobackup.DeleteLock()
+	glog.V(1).Infof("CF LOCATION:%v", p.Location)
 
-	switch p.command {
-	case "search":
-		return p.doSearch()
-	case "listAllFiles":
-		return p.doListAll()
-	case "listRecentFiles":
-		return p.doListRecent()
-	case "keys":
-		return p.doGetKeys()
-	case "sync":
-		return p.doSync()
-	default:
+	backupLocations := strings.Split(p.Location, ",")
+	// TODO canonicalize each and check they are under home directory.
+
+	for _, l := range backupLocations {
+		cp, err := gobackup.MakeCanonicalPath(l)
+		if err != nil {
+			glog.Warningf("While canonicalizing path '%s': %v", l, err)
+			continue
+		}
+		gobackup.CheckPath(cp, p.HomeDirectory)
+		if err := getFiles(strings.TrimSpace(l), &fileList); err != nil {
+			glog.Warningf("While getting files to back up: %v", err)
+			continue
+		}
+	}
+
+	sort.Strings(fileList)
+
+	//fill in the Metadata
+	for _, f := range fileList {
+		hash, err := gobackup.Md5file(f)
+		if err != nil {
+			return err
+		}
+		hashContentAndMeta, err := gobackup.Md5fileAndMeta(f)
+		if err != nil {
+			return err
+		}
+
+		//debug info
+		if glog.V(2) {
+			openFile, _ := os.Open(f)
+			contents, _ := ioutil.ReadAll(openFile)
+			glog.Infof("For Loop: (f:%v)(hash:%v)(contents:%v)", f, hash, string(contents))
+		}
+		//if content hash not found, need two entries 1, content hash, 2, content and meta hash
+		ok, err := searchData(hash)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			meta, err := gobackup.CreateMeta(f)
+			if err != nil {
+				return err
+			}
+			populatePayloadAndMeta(&dat, &meta, hashContentAndMeta)
+			continue
+		}
+		ok, err = searchData(hashContentAndMeta)
+		if err != nil {
+			return err
+		}
+		if !ok { //content hash was found, so now check for content and meta hash
+			meta, err := gobackup.CreateMeta(f)
+			if err != nil {
+				return err
+			}
+			populateFK(&dat, &meta, hashContentAndMeta)
+			continue
+
+		}
+
+		//all Hashes for the file were in the local database. Exclude from uploading
+		glog.V(1).Infoln("FOUND AND EXCLUDING! " + f + " " + hash)
+	} //for
+
+	//TheMetadata is empty, then there is no work left to be done. Exit program
+	if len(dat.TheMetadata) == 0 {
+		glog.Infoln("All files are up to date! Exiting!")
+		return nil
+	}
+
+	//information for user
+	glog.Infof("Backing up %v Files, Data Size: %v", dat.Count, dat.DataSize)
+
+	//split the work and backup
+	if err := backup(*p); err != nil {
+		return err
+	}
+
+	d := gobackup.Data{ReadOnly: p.dryRun}
+	//update the local data file
+	d.DataFile2("data.dat", &dat)
+
+	return nil
+}
+
+// The error is a named return value, so that it is in scope for a deferred
+// function.
+func (p *programParameters) doCommand() (err error) {
+	if p == nil {
+		return fmt.Errorf("BUG: Empty program parameters")
+	}
+	if err := gobackup.AddLock(); err != nil {
+		return err
+	}
+	defer func() {
+		if delErr := gobackup.DeleteLock(); delErr != nil {
+			// Wrap any existing error with this one.
+			if err != nil {
+				err = fmt.Errorf("%w; Additional error while deleting lock file: %v", err, delErr)
+			} else {
+				err = delErr
+			}
+		}
+	}()
+
+	e, ok := commands[p.command]
+	if !ok {
 		return fmt.Errorf("BUG: unknown command '%s'", p.command)
 	}
+	return e.fn(p)
 }
 
 func main() {
@@ -517,73 +653,12 @@ func main() {
 		glog.Fatalf("Could not determine account information")
 	}
 
+	if err := os.Chdir(string(p.HomeDirectory)); err != nil {
+		glog.Fatalf("Could not change working directory to home directory '%s': %v", p.HomeDirectory, err)
+	}
+
 	if err := p.doCommand(); err != nil {
 		os.Exit(1)
 	}
 
-	pref, _ := filepath.Abs(p.preferencesFile)
-
-	gobackup.ChangeHomeDirectory(cf.HomeDirectory)
-	glog.V(1).Infof("Checking that directory is below home! Directory:%v result:%t", pref, gobackup.CheckPath(pref, cf.HomeDirectory))
-
-	//prevent other local gobackup instances from altering critical files
-	gobackup.AddLock()
-	defer gobackup.DeleteLock()
-
-	//the filelist for backup
-	var fileList []string
-
-	glog.V(1).Infof("CF LOCATION:%v", p.Location)
-
-	backupLocations := strings.Split(p.Location, ",")
-
-	for _, l := range backupLocations {
-		if err := getFiles(strings.TrimSpace(l), &fileList); err != nil {
-			glog.Errorf("Fatal error while getting files to back up: %v", err)
-			return
-		}
-	}
-
-	sort.Strings(fileList)
-
-	//fill in the Metadata
-	for _, f := range fileList {
-		hash := gobackup.Md5file(f)
-		hashContentAndMeta := gobackup.Md5fileAndMeta(f)
-
-		//debug info
-		if glog.V(2) {
-			openFile, _ := os.Open(f)
-			contents, _ := ioutil.ReadAll(openFile)
-			glog.Infof("For Loop: (f:%v)(hash:%v)(contents:%v)", f, hash, string(contents))
-		}
-		//if content hash not found, need two entries 1, content hash, 2, content and meta hash
-		if !searchData(hash) {
-			meta := gobackup.CreateMeta(f)
-			populatePayloadAndMeta(&dat, &meta, hashContentAndMeta)
-		} else if !searchData(hashContentAndMeta) { //content hash was found, so now check for content and meta hash
-			meta := gobackup.CreateMeta(f)
-			populateFK(&dat, &meta, hashContentAndMeta)
-
-		} else { //all Hashes for the file were in the local database. Exclude from uploading
-			glog.V(1).Infoln("FOUND AND EXCLUDING! " + f + " " + hash)
-		}
-	} //for
-
-	//TheMetadata is empty, then there is no work left to be done. Exit program
-	if len(dat.TheMetadata) == 0 {
-		glog.Infoln("All files are up to date! Exiting!")
-		gobackup.DeleteLock()
-		os.Exit(0)
-	}
-
-	//information for user
-	glog.Infof("Backing up %v Files, Data Size: %v", dat.Count, dat.DataSize)
-
-	//split the work and backup
-	backup(p)
-
-	d := gobackup.Data{ReadOnly: p.dryRun}
-	//update the local data file
-	d.DataFile2("data.dat", &dat)
 } //main
