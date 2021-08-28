@@ -40,12 +40,7 @@ func Md5file(in string) (string, error) {
 }
 
 //run md5 hash on a file contents and metadata
-func Md5fileAndMeta(in string) (string, error) {
-	meta, err := CreateMeta(in)
-	if err != nil {
-		return "", err
-	}
-
+func Md5fileAndMeta(meta Metadata) (string, error) {
 	result := fmt.Sprintf("%x", md5.Sum([]byte(MetadataToString(meta))))
 
 	glog.V(2).Infof("CONTENT AND META******%v******\n\n", result)

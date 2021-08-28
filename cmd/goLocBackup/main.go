@@ -191,16 +191,19 @@ type programParameters struct {
 func (p *programParameters) makeAccount() *cf.Account {
 	var acct cf.Account
 	glog.Infof("Passed makeAccount log 0 point part 1 of 2")
-	glog.Infof("Passed makeAccount log 0 point: preferencesFile:%s", p.preferencesFile)
+	glog.Infof("Passed makeAccount log 0 point: preferencesFile: '%s'", p.preferencesFile)
 
 	// Command line options override settings in preferences file.
 	// Read the preferences file first, then set any command line options.
-	if p.preferencesFile != "" {
-		// read the preferences file and populate fields.
-		// Ignore any error.
-		glog.Infof("Passed makeAccount log 1 point")
-		acct = readPreferencesFile(p.preferencesFile)
+	if p.preferencesFile == "" {
+		glog.Errorf("You must specify a preferences file.")
+		return nil
 	}
+
+	// read the preferences file and populate fields.
+	// Ignore any error.
+	glog.Infof("Passed makeAccount log 1 point")
+	acct = readPreferencesFile(p.preferencesFile)
 
 	// Override fields with any flags that were present.
 	if p.Email != "" {
@@ -296,14 +299,14 @@ func extractCommandLine() programParameters {
 	}
 
 	p.command = flag.Arg(0)
-
-	cp, err := gobackup.MakeCanonicalPath(*givenHomeDir)
 	if *givenHomeDir == "" {
-		fmt.Fprintf(flag.CommandLine.Output(), "Home directory is empty. Please specify in preferences file or command line flag.")
+		glog.Fatalf("Home directory is empty. Please specify in command line flag.")
 	}
+	cp, err := gobackup.MakeCanonicalPath(*givenHomeDir)
 	if err != nil {
-		p.HomeDirectory = cp
+		glog.Fatalf("%v", err)
 	}
+	p.HomeDirectory = cp
 
 	return p
 }
@@ -550,14 +553,15 @@ func doUpload(p *programParameters) error {
 
 	//fill in the Metadata
 	for _, f := range fileList {
-		hash, err := gobackup.Md5file(f)
+		meta, err := gobackup.CreateMeta(f)
 		if err != nil {
 			return err
 		}
-		hashContentAndMeta, err := gobackup.Md5fileAndMeta(f)
+		hashContentAndMeta, err := gobackup.Md5fileAndMeta(meta)
 		if err != nil {
 			return err
 		}
+		hash := meta.Hash
 
 		//debug info
 		if glog.V(2) {
@@ -571,10 +575,6 @@ func doUpload(p *programParameters) error {
 			return err
 		}
 		if !ok {
-			meta, err := gobackup.CreateMeta(f)
-			if err != nil {
-				return err
-			}
 			populatePayloadAndMeta(&dat, &meta, hashContentAndMeta)
 			continue
 		}
@@ -583,10 +583,6 @@ func doUpload(p *programParameters) error {
 			return err
 		}
 		if !ok { //content hash was found, so now check for content and meta hash
-			meta, err := gobackup.CreateMeta(f)
-			if err != nil {
-				return err
-			}
 			populateFK(&dat, &meta, hashContentAndMeta)
 			continue
 
