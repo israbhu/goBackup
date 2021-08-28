@@ -532,7 +532,6 @@ func doUpload(p *programParameters) error {
 	glog.V(1).Infof("CF LOCATION:%v", p.Location)
 
 	backupLocations := strings.Split(p.Location, ",")
-	// TODO canonicalize each and check they are under home directory.
 
 	for _, l := range backupLocations {
 		cp, err := gobackup.MakeCanonicalPath(l)
