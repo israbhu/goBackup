@@ -3,10 +3,8 @@ package gobackup
 import (
 	"bufio"
 	"crypto/md5"
-	"encoding/hex"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -27,36 +25,27 @@ type MyData struct {
 
 type CanonicalPathString string
 
-//convert hex bytes into a string
-func hashToString(in []byte) string {
-	return hex.EncodeToString(in)
-}
-
 //run md5 hash on a file
 func Md5file(in string) (string, error) {
-	dat, err := ioutil.ReadFile(in)
+	f, err := os.Open(in)
 	if err != nil {
-		return "", fmt.Errorf("md5 failed: %v", err)
+		return "", fmt.Errorf("While generating hash for file '%s': %v", in, err)
 	}
-	data := md5.Sum(dat)
-	return hashToString(data[:]), nil
+	defer f.Close()
+	h := md5.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", fmt.Errorf("While computing checksum on file contents: %v", err)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
 //run md5 hash on a file contents and metadata
-func Md5fileAndMeta(in string) (string, error) {
-	dat, err := ioutil.ReadFile(in)
-	if err != nil {
-		return "", fmt.Errorf("while generating hash for file and metadata: %v", err)
-	}
+func Md5fileAndMeta(meta Metadata) (string, error) {
+	result := fmt.Sprintf("%x", md5.Sum([]byte(MetadataToString(meta))))
 
-	meta, err := CreateMeta(in)
-	if err != nil {
-		return "", err
-	}
-	result := fmt.Sprintf("%v%v", string(dat), meta)
 	glog.V(2).Infof("CONTENT AND META******%v******\n\n", result)
-	data := md5.Sum([]byte(result))
-	return hashToString(data[:]), nil
+
+	return result, nil
 }
 
 /*
