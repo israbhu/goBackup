@@ -188,21 +188,20 @@ type programParameters struct {
 
 // Returns an account information given all of the options given on the command
 // line.
-func (p *programParameters) makeAccount() *cf.Account {
+func (p *programParameters) applyPreferencesFile() error {
 	var acct cf.Account
-	glog.Infof("Passed makeAccount log 0 point part 1 of 2")
-	glog.Infof("Passed makeAccount log 0 point: preferencesFile: '%s'", p.preferencesFile)
+	glog.Infof("Passed applyPreferencesFile log 0 point part 1 of 2")
+	glog.Infof("Passed applyPreferencesFile log 0 point: preferencesFile: '%s'", p.preferencesFile)
 
 	// Command line options override settings in preferences file.
 	// Read the preferences file first, then set any command line options.
 	if p.preferencesFile == "" {
-		glog.Errorf("You must specify a preferences file.")
-		return nil
+		return fmt.Errorf("You must specify a preferences file.")
 	}
 
 	// read the preferences file and populate fields.
 	// Ignore any error.
-	glog.Infof("Passed makeAccount log 1 point")
+	glog.Infof("Passed applyPreferencesFile log 1 point")
 	acct = readPreferencesFile(p.preferencesFile)
 
 	// Override fields with any flags that were present.
@@ -231,17 +230,18 @@ func (p *programParameters) makeAccount() *cf.Account {
 		acct.Zip = p.Zip
 	}
 
-	glog.Infof("Passed makeAccount log 2 point")
+	glog.Infof("Passed applyPreferencesFile log 2 point")
 
 	acct.LocalOnly = p.dryRun
 
 	if err := acct.Validate(); err != nil {
-		glog.Errorf("Could not make an account from arguments: %v", err)
-		return nil
+		return fmt.Errorf("Could not make an account from arguments: %v", err)
 	}
-	glog.Infof("Passed makeAccount log 3 point")
+	glog.Infof("Passed applyPreferencesFile log 3 point")
 
-	return &acct
+	p.Account = acct
+
+	return nil
 }
 
 //process the command line commands
@@ -307,6 +307,10 @@ func extractCommandLine() programParameters {
 		glog.Fatalf("%v", err)
 	}
 	p.HomeDirectory = cp
+
+	if err := p.applyPreferencesFile(); err != nil {
+		glog.Fatalf("Could not make valid account: %v", err)
+	}
 
 	return p
 }
@@ -473,13 +477,9 @@ func doListRecent(p *programParameters) error {
 }
 
 func doGetKeys(p *programParameters) error {
-	acct := p.makeAccount()
-	if acct == nil {
-		return fmt.Errorf("Could not get keys from invalid account")
-	}
 	//get keys
 	glog.Infoln("Getting the keys and metadata!")
-	keys, err := acct.GetKVkeys()
+	keys, err := p.Account.GetKVkeys()
 	if err != nil {
 		return err
 	}
@@ -488,13 +488,9 @@ func doGetKeys(p *programParameters) error {
 }
 
 func doSync(p *programParameters) error {
-	acct := p.makeAccount()
-	if acct == nil {
-		return fmt.Errorf("Could not get keys from invalid account")
-	}
 	//get keys
 	glog.Infoln("Getting the keys and metadata!")
-	jsonKeys, err := acct.GetKVkeys()
+	jsonKeys, err := p.Account.GetKVkeys()
 	if err != nil {
 		return err
 	}
@@ -643,10 +639,6 @@ func (p *programParameters) doCommand() (err error) {
 func main() {
 	//command line can overwrite the data from the preferences file
 	p := extractCommandLine()
-	cf := p.makeAccount()
-	if cf == nil {
-		glog.Fatalf("Could not determine account information")
-	}
 
 	if err := os.Chdir(string(p.HomeDirectory)); err != nil {
 		glog.Fatalf("Could not change working directory to home directory '%s': %v", p.HomeDirectory, err)
